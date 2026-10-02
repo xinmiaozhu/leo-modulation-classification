@@ -13,8 +13,6 @@ Dependencies are declared in `setup.py`; no separate requirements file is needed
 The `dev` extra installs pytest. Training guides use CUDA; use `--device cpu`
 when a CUDA-capable PyTorch installation is unavailable.
 
-Protocol A commands are in [RUN_EXACT_MIXTURE.md](RUN_EXACT_MIXTURE.md).
-The promoted Protocol B pipeline is in [RUN_HYBRID_DFRFT.md](RUN_HYBRID_DFRFT.md).
 Dataset-generation commands are in [PRACTICAL_PROTOCOL.md](experiments/PRACTICAL_PROTOCOL.md).
 
 The common training and evaluation entry points are `scripts/13_train_model.py`
@@ -30,7 +28,7 @@ Generated datasets, features and splits live in `data/`; checkpoints, results an
 paper figures live in `outputs/`. HOC extraction remains available for diagnostics
 and the NASA HOC-NN baseline.
 
-Author: Yehui. To cite the software, use [CITATION.cff](CITATION.cff):
+Author: Yehui. To cite the software:
 Yehui. *LEO modulation classification*, version 0.1.0 (computer software).
 Third-party implementation provenance is documented in
 [STARNet reproduction](docs/starnet_reproduction.md).
