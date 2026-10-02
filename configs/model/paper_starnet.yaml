@@ -1,0 +1,7 @@
+model:
+  # Zhang et al., IEEE TWC 2024, official native record length.
+  input_length: 128
+  train_windows: 4
+  window_batch_size: 512
+  mask_probability: 0.1
+  reconstruction_weight: 0.6

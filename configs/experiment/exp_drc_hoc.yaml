@@ -1,0 +1,81 @@
+drc_hoc:
+  sample_rate_hz: 200000.0
+
+  # Paper-strict DRC-HOC pipeline:
+  # amplitude normalization -> k=4 branch -> DFRFT/chirp-focusing alpha search.
+  estimator_type: "paper_strict_dfrft"
+  candidate_orders: [4]
+
+  # DFRFT angle search. For quick debugging, reduce this to 101 or 201.
+  alpha_steps: 2000
+  alpha_min: 0.0001
+
+  # alpha -> mu calibration.
+  # null means automatic N^-2 discrete-time normalization in code.
+  calibration_scale: null
+  calibration_bias: 0.0
+
+  # Optional physical clipping of mapped mu candidates.
+  mu_grid_min: -8160.0
+  mu_grid_max: -180.0
+  mu_grid_size: 1001
+
+  peak_exclude_bins: 5
+  peak_eta: 0.00001
+  delta: 0.00000001
+  # Optional ablation: remove branch DC before DFRFT scoring. Disabled by
+  # default because it can also suppress useful coherent components.
+  dc_block: false
+  # Keep the full physical search range and handle edge artifacts with a soft
+  # score penalty instead of hard-clipping true near-edge samples.
+  mu_search_guard_fraction: 0.0
+  boundary_penalty_weight: 0.95
+  boundary_penalty_fraction: 0.08
+  peak_margin_rel_floor: 0.20
+  peak_margin_exclude_bins: 5
+  # Reject a boundary candidate outright if its peak-margin is too small. If
+  # every branch is rejected, fallback to the physical prior midpoint.
+  boundary_reject_fraction: 0.03
+  boundary_reject_margin_rel: 0.10
+  # Also fallback when the finally selected peak is not sufficiently separated
+  # from the runner-up, even if it is not near a search boundary.
+  enable_fallback: false
+  global_reject_margin_rel: 0.05
+  fallback_mu_hz_per_s: null
+  # Use HOC stability only as a constrained tie-breaker among already credible
+  # alpha/mu candidates. Low-margin candidates and candidates far below the
+  # primary score are not allowed to overrule the DFRFT peak decision.
+  hoc_rerank_top_n: 5
+  hoc_rerank_pool_size: 25
+  hoc_rerank_weight: 0.20
+  hoc_rerank_min_margin_rel: 0.10
+  hoc_rerank_min_score_ratio: 0.85
+  hoc_rerank_num_subwindows: null
+  # Final candidate selection by constellation EVM. DFRFT only proposes mu
+  # candidates; EVM chooses the candidate whose compensated, matched-filtered
+  # samples are closest to the supported constellation set.
+  evm_rerank_enabled: true
+  # Evaluate every supported constellation. The unknown payload label is never
+  # passed to the pilot-free initializer.
+  evm_label_aware: false
+  evm_rerank_top_n: 25
+  evm_rerank_pool_size: 50
+  evm_samples_per_symbol: 8
+  evm_rrc_beta: 0.35
+  evm_rrc_span: 8
+  # The current synthetic generator has deterministic symbol timing. Set this
+  # to null or [0,1,2,3,4,5,6,7] for unknown timing at higher compute cost.
+  evm_timing_phases: [0]
+  evm_phase_grid_size: 1
+  evm_max_symbols: 512
+  evm_symbol_trim: 8
+  evm_modulations: ["QPSK", "16QAM", "64QAM", "16APSK", "32APSK"]
+  evm_refine_all_candidates: true
+  evm_fine_search_radius_hz_per_s: 800.0
+  evm_fine_search_step_hz_per_s: 80.0
+
+  compensate_fd0: false
+  centered_time: false
+  num_subwindows: 10
+  hoc_representation: "real_imag_abs"
+  batch_size: 64

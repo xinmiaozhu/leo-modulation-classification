@@ -1,0 +1,32 @@
+seed: 42
+
+signal:
+  modulations: ["BPSK", "QPSK", "8PSK", "16QAM", "64QAM", "16APSK", "32APSK"]
+  num_samples_per_class: 200
+  num_symbols: 128
+  sps: 4
+  fs: 1000000.0
+  target_num_samples: 512
+  rrc_beta: 0.35
+  rrc_span: 8
+
+leo:
+  carrier_frequency_hz: 2000000000.0
+  fd0_range_hz: [-20000.0, 20000.0]
+  mu_range_hz_per_s: [-1000.0, 1000.0]
+  orbit_altitudes_km: [550.0]
+  orbit_inclinations_deg: [53.0]
+
+channel:
+  type: "awgn"
+  snr_db_range: [-5.0, 20.0]
+  compensate_constant_doppler: false
+
+domain:
+  domain_values: [0]
+
+split:
+  mode: "stratified"
+  train_ratio: 0.7
+  val_ratio: 0.1
+  test_ratio: 0.2

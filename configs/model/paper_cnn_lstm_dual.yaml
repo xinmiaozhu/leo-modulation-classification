@@ -1,0 +1,7 @@
+model:
+  input_length: 128
+  feature_dim: 128
+  lstm_hidden: 64
+  dropout: 0.2
+  train_windows: 4
+  window_batch_size: 512

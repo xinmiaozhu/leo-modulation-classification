@@ -1,0 +1,10 @@
+model:
+  feature_dim: 128
+  dropout: 0.2
+  fusion_hidden_dim: 64
+  fusion_type: "mlp"
+  use_iq_stream: true
+  use_hoc_stream: false
+  use_metadata: false
+  use_constellation_image: false
+  use_evm_features: false

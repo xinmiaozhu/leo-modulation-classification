@@ -1,0 +1,39 @@
+seed: 42
+
+signal:
+  modulations: ["QPSK", "16QAM", "64QAM", "16APSK", "32APSK"]
+  num_samples_per_class: 1000
+  num_symbols: 1024
+  sps: 8
+  fs: 200000.0
+  target_num_samples: 8192
+  rrc_beta: 0.35
+  rrc_span: 8
+
+leo:
+  carrier_frequency_hz: 30000000000.0
+  # 3GPP TR 38.811 Table 5.3.4.3.2-7 gives +/-720 kHz
+  # max Doppler shift for 30 GHz at 600 km. The current baseband
+  # simulation assumes this constant component has been coarsely
+  # compensated before sampling, so only Doppler-rate remains.
+  fd0_range_hz: [0.0, 0.0]
+  # 3GPP TR 38.811 Table 5.3.4.3.2-7 gives the -8.16 kHz/s maximum-rate
+  # reference for 30 GHz at 600 km. The -180 Hz/s endpoint approximates
+  # the 10-degree visibility edge of the co-rotating overhead-pass model.
+  mu_range_hz_per_s: [-8160.0, -180.0]
+  orbit_altitudes_km: [600.0]
+  orbit_inclinations_deg: [53.0, 70.0, 90.0]
+
+channel:
+  type: "awgn"
+  snr_db_range: [-10.0, 20.0]
+  compensate_constant_doppler: false
+
+domain:
+  domain_values: [0, 1, 2]
+
+split:
+  mode: "stratified"
+  train_ratio: 0.7
+  val_ratio: 0.1
+  test_ratio: 0.2

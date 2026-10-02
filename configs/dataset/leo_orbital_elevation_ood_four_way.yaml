@@ -1,0 +1,48 @@
+seed: 2408
+
+signal:
+  modulations: [BPSK, QPSK, 8PSK, 16QAM, 64QAM, 16APSK, 32APSK]
+  num_symbols: 1024
+  sps: 8
+  fs: 200000.0
+  target_num_samples: 8192
+  rrc_beta: 0.35
+  rrc_span: 8
+
+trajectory:
+  profile_mode: orbital
+  tracks_per_modulation: 48
+  frames_per_track: 24
+  frame_spacing_s: 1.0
+  maximum_elevations_deg: [20.0, 30.0, 45.0, 60.0, 75.0, 90.0]
+  minimum_elevation_deg: 10.0
+  include_earth_rotation: true
+  snr_track_std_db: 2.0
+  snr_profile_mode: balanced_grid
+
+leo:
+  carrier_frequency_hz: 30000000000.0
+  fd0_range_hz: [0.0, 0.0]
+  mu_range_hz_per_s: [-9000.0, 0.0]
+  orbit_altitudes_km: [600.0]
+  orbit_inclinations_deg: [53.0]
+
+channel:
+  type: awgn
+  snr_db_range: [-10.0, 20.0]
+
+pilot:
+  enabled: true
+  pattern: comb
+  interval_symbols: 16
+  guard_symbols: 0
+  modulation: QPSK
+  symbol_mode: pn
+  seed: 2026
+
+split:
+  mode: elevation_holdout_four_way
+  train_elevations_deg: [20.0, 30.0, 45.0]
+  val_elevations_deg: [60.0]
+  calibration_elevations_deg: [75.0]
+  test_elevations_deg: [90.0]

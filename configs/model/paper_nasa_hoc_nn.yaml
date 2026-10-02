@@ -1,0 +1,3 @@
+model:
+  feature_dim: 40
+  dropout: 0.0

@@ -1,0 +1,61 @@
+seed: 42
+
+signal:
+  modulations: ["QPSK", "16QAM", "64QAM", "16APSK", "32APSK"]
+  # 20 tracks * 50 frames = 1000 samples per modulation, 5000 total.
+  num_symbols: 1024
+  sps: 8
+  fs: 200000.0
+  target_num_samples: 8192
+  rrc_beta: 0.35
+  rrc_span: 8
+
+trajectory:
+  tracks_per_modulation: 20
+  frames_per_track: 50
+  frame_spacing_s: 1.0
+  snr_track_std_db: 2.0
+  # Smooth negative Doppler-rate profile. Each track moves between a
+  # visibility-edge value and a most-negative closest-approach value.
+  mu_center_min_hz_per_s: -8160.0
+  mu_center_max_hz_per_s: -6500.0
+  mu_edge_min_hz_per_s: -2600.0
+  mu_edge_max_hz_per_s: -180.0  # Approximately the 10-degree visibility edge.
+  profile_center_min: 0.35
+  profile_center_max: 0.65
+  profile_width_min: 0.45
+  profile_width_max: 0.80
+  mu_frame_jitter_std_hz_per_s: 0.0
+
+leo:
+  carrier_frequency_hz: 30000000000.0
+  fd0_range_hz: [0.0, 0.0]
+  mu_range_hz_per_s: [-8160.0, -180.0]
+  orbit_altitudes_km: [600.0]
+  orbit_inclinations_deg: [53.0, 70.0, 90.0]
+
+channel:
+  type: "awgn"
+  snr_db_range: [-10.0, 20.0]
+  compensate_constant_doppler: false
+
+pilot:
+  enabled: true
+  # Comb pilots span the whole 40.96 ms frame, which gives the quadratic
+  # phase estimator enough time aperture. With 1024 symbols and interval 16,
+  # this inserts roughly 64 known pilot symbols per frame.
+  pattern: "comb"
+  interval_symbols: 16
+  guard_symbols: 0
+  modulation: "QPSK"
+  symbol_mode: "pn"
+  seed: 2026
+
+domain:
+  domain_values: [0, 1, 2]
+
+split:
+  mode: "track_stratified"
+  train_ratio: 0.7
+  val_ratio: 0.1
+  test_ratio: 0.2

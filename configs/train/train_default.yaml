@@ -1,0 +1,17 @@
+train:
+  epochs: 50
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: "adamw"
+  scheduler: "cosine"
+  early_stop_patience: 10
+  lambda_gate: 0.1
+  grad_clip_norm: 5.0
+  num_workers: 2
+  pin_memory: true
+
+device: "cuda"
+
+loss:
+  lambda_gate: 0.1
