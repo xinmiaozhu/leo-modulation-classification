@@ -30,6 +30,7 @@ class ChannelConfig:
     rician_k_db: float = 10.0
     multipath_delays: tuple[int, ...] = (0, 3, 7)
     multipath_gains_db: tuple[float, ...] = (0.0, -6.0, -10.0)
+    multipath_doppler_hz: tuple[float, ...] = ()
     phase_noise_std_rad: float = 0.0
     phase_noise_mode: str = "random_walk"
 
@@ -45,10 +46,12 @@ class NonStationaryLEOChannel:
         sample_rate_hz: float,
         carrier_frequency_hz: float,
         rng: np.random.Generator | None = None,
+        noise_rng: np.random.Generator | None = None,
     ) -> None:
         self.fs = float(sample_rate_hz)
         self.fc = float(carrier_frequency_hz)
         self.rng = np.random.default_rng() if rng is None else rng
+        self.noise_rng = self.rng if noise_rng is None else noise_rng
         self.doppler = DopplerModel(carrier_frequency_hz)
 
     def apply_doppler_rate(self, x: np.ndarray, fd0_hz: float, mu_hz_per_s: float) -> np.ndarray:
@@ -58,7 +61,33 @@ class NonStationaryLEOChannel:
         return self.doppler.remove_constant_doppler(x, self.fs, fd0_hz)
 
     def add_awgn(self, x: np.ndarray, snr_db: float) -> np.ndarray:
-        return add_awgn_complex(x, snr_db, self.rng)
+        return add_awgn_complex(x, snr_db, self.noise_rng)
+
+    def apply_time_varying_multipath(
+        self, x: np.ndarray, delays: tuple[int, ...],
+        gains_db: tuple[float, ...], doppler_hz: tuple[float, ...],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Sparse specular paths h_l[n] = c_l exp(j 2 pi nu_l n/fs).
+
+        Dopplers are relative to the common carrier law applied before this
+        operator. This is a controlled time-varying model, not Jakes fading.
+        Returned dense taps describe n=0; frequencies are stored separately.
+        """
+        if not delays or len(delays) != len(gains_db) or len(delays) != len(doppler_hz):
+            raise ValueError("Each path needs a delay, gain and Doppler.")
+        if len(set(delays)) != len(delays) or any(int(d) != d or d < 0 for d in delays):
+            raise ValueError("Path delays must be distinct non-negative integers.")
+        if not np.all(np.isfinite([*gains_db, *doppler_hz])):
+            raise ValueError("Path gains and Dopplers must be finite.")
+        y = np.zeros(len(x), dtype=np.complex128)
+        taps = np.zeros(max(delays) + 1, dtype=np.complex128)
+        time = np.arange(len(x)) / self.fs
+        for delay, gain, nu in zip(delays, gains_db, doppler_hz):
+            coeff = 10 ** (gain / 20) * np.exp(1j * self.rng.uniform(0, 2 * np.pi))
+            taps[delay] = coeff
+            if delay < len(x):
+                y[delay:] += coeff * np.exp(2j * np.pi * nu * time[delay:]) * x[:len(x)-delay]
+        return y, taps
 
     def apply_static_multipath(
         self,
@@ -125,6 +154,12 @@ class NonStationaryLEOChannel:
             pass
         elif channel_type == "rician":
             y = self.apply_rician(y, k_db=config.rician_k_db)
+        elif channel_type == "time_varying_multipath":
+            y, channel_taps = self.apply_time_varying_multipath(
+                y, config.multipath_delays, config.multipath_gains_db,
+                config.multipath_doppler_hz,
+            )
+            channel_delays = np.asarray(config.multipath_delays, dtype=np.int64)
         elif channel_type == "multipath":
             y, channel_taps = self.apply_static_multipath(
                 y,
@@ -160,6 +195,10 @@ class NonStationaryLEOChannel:
             "phase_noise_mode": str(config.phase_noise_mode),
             "channel_taps": channel_taps,
             "channel_delays": channel_delays,
+            "channel_doppler_hz": np.asarray(
+                config.multipath_doppler_hz if channel_type == "time_varying_multipath"
+                else np.zeros(len(channel_delays)), dtype=float,
+            ),
         }
 
         return y, info

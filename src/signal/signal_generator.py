@@ -53,6 +53,7 @@ class SignalSpec:
     rician_k_db: float = 10.0
     multipath_delays: tuple[int, ...] = (0, 3, 7)
     multipath_gains_db: tuple[float, ...] = (0.0, -6.0, -10.0)
+    multipath_doppler_hz: tuple[float, ...] = ()
     phase_noise_std_rad: float = 0.0
     phase_noise_mode: str = "random_walk"
 
@@ -273,7 +274,8 @@ class LEOSignalGenerator:
 
         return x.astype(np.complex128), indices, pilot_indices, pilot_symbols
 
-    def generate(self, spec: SignalSpec) -> GeneratedSignal:
+    def generate(self, spec: SignalSpec, *, channel_rng: np.random.Generator | None = None,
+                 noise_rng: np.random.Generator | None = None) -> GeneratedSignal:
         """Generate one labeled LEO signal example."""
 
         spec.modulation = spec.modulation.upper()
@@ -283,7 +285,8 @@ class LEOSignalGenerator:
         channel = NonStationaryLEOChannel(
             sample_rate_hz=spec.sample_rate_hz,
             carrier_frequency_hz=spec.carrier_frequency_hz,
-            rng=self.rng,
+            rng=self.rng if channel_rng is None else channel_rng,
+            noise_rng=noise_rng,
         )
 
         channel_cfg = ChannelConfig(
@@ -297,6 +300,7 @@ class LEOSignalGenerator:
             rician_k_db=spec.rician_k_db,
             multipath_delays=spec.multipath_delays,
             multipath_gains_db=spec.multipath_gains_db,
+            multipath_doppler_hz=spec.multipath_doppler_hz,
             phase_noise_std_rad=spec.phase_noise_std_rad,
             phase_noise_mode=spec.phase_noise_mode,
         )

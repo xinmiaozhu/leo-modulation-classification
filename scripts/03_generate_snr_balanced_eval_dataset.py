@@ -92,6 +92,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--phase-noise-std-rad", type=float, default=0.0)
     p.add_argument("--phase-noise-mode", choices=["iid", "random_walk"], default="random_walk")
     p.add_argument("--channel-type", type=str, default="awgn")
+    p.add_argument("--multipath-delays", type=int, nargs="+", default=[0, 3, 7])
+    p.add_argument("--multipath-gains-db", type=float, nargs="+", default=[0, -6, -10])
+    p.add_argument("--multipath-doppler-hz", type=float, nargs="+", default=[])
+    p.add_argument("--paired-seeds", action="store_true",
+                   help="Independent per-frame symbol, channel and noise streams for paired channel comparisons.")
     p.add_argument("--pilot-pattern", type=str, default="comb")
     p.add_argument("--pilot-interval-symbols", type=int, default=16)
     p.add_argument("--pilot-guard-symbols", type=int, default=0)
@@ -209,8 +214,19 @@ def main() -> None:
     split_indices: dict[str, list[int]] = {"train": [], "val": [], "test": []}
     channel_taps_list: list[np.ndarray] = []
     channel_delays_list: list[np.ndarray] = []
+    channel_doppler_list: list[np.ndarray] = []
+    pair_keys: list[list[int]] = []
 
-    for sample_id, (split_name, modulation, snr_db, _) in enumerate(iterator):
+    for sample_id, (split_name, modulation, snr_db, rep) in enumerate(iterator):
+        key = [args.seed, {"train": 1, "val": 2, "test": 3, "eval": 4}[split_name],
+               modulations.index(modulation), snr_values.index(snr_db), rep]
+        pair_keys.append(key)
+        channel_rng = noise_rng = None
+        if args.paired_seeds:
+            streams = np.random.SeedSequence(key).spawn(4)
+            rng = np.random.default_rng(streams[0])
+            generator.rng = np.random.default_rng(streams[1])
+            channel_rng, noise_rng = (np.random.default_rng(s) for s in streams[2:])
         mu = float(rng.uniform(args.mu_min, args.mu_max))
         fd0_min = float(args.fd0_hz if args.fd0_min_hz is None else args.fd0_min_hz)
         fd0_max = float(args.fd0_hz if args.fd0_max_hz is None else args.fd0_max_hz)
@@ -234,6 +250,9 @@ def main() -> None:
             rrc_span=int(args.rrc_span),
             channel_type=str(args.channel_type),
             rician_k_db=float(args.rician_k_db),
+            multipath_delays=tuple(args.multipath_delays),
+            multipath_gains_db=tuple(args.multipath_gains_db),
+            multipath_doppler_hz=tuple(args.multipath_doppler_hz),
             phase_noise_std_rad=float(args.phase_noise_std_rad),
             phase_noise_mode=str(args.phase_noise_mode),
             fractional_timing_offset_samples=fractional_timing,
@@ -247,7 +266,7 @@ def main() -> None:
             pilot_symbol_mode=str(args.pilot_symbol_mode),
             pilot_seed=int(args.pilot_seed),
         )
-        sample = generator.generate(spec)
+        sample = generator.generate(spec, channel_rng=channel_rng, noise_rng=noise_rng)
 
         iq_list.append(sample.iq.astype(np.float32))
         label_list.append(int(sample.label))
@@ -283,6 +302,7 @@ def main() -> None:
         channel_delays_list.append(
             np.asarray(sample.info.get("channel_delays", [0]), dtype=np.int64)
         )
+        channel_doppler_list.append(np.asarray(sample.info["channel_doppler_hz"], dtype=float))
         if split_mode:
             split_indices[str(split_name)].append(sample_id)
 
@@ -325,7 +345,9 @@ def main() -> None:
         "num_pilots": np.asarray(num_pilots_list, dtype=np.int64),
         "dataset_split": np.asarray(split_name_list, dtype="S16"),
         "phase_noise_std_rad": np.full(total, float(args.phase_noise_std_rad), dtype=np.float32),
-        "channel_type": np.asarray([str(args.channel_type).encode("utf-8")] * total, dtype="S16"),
+        "channel_type": np.asarray([str(args.channel_type).encode("utf-8")] * total, dtype="S32"),
+        "channel_doppler_hz": np.stack(channel_doppler_list),
+        "pair_key": np.asarray(pair_keys, dtype=np.int64),
         "channel_taps": channel_taps,
         "channel_tap_valid": channel_tap_valid,
         "channel_delays": np.stack(channel_delays_list, axis=0).astype(np.int64),
@@ -333,6 +355,9 @@ def main() -> None:
     }
 
     summary = {
+        "generation_args": vars(args),
+        "paired_seeds": bool(args.paired_seeds),
+        "snr_convention": "per-frame received clean power / expected noise power",
         "dataset_type": "snr_balanced_split" if split_mode else "snr_balanced_eval",
         "num_samples": int(total),
         "modulations": modulations,

@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.signal.pulse_shape import pulse_shape_symbols
+from src.signal.multipath_equalization import compensated_path_coefficients, oracle_equalize
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,10 +25,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--raw-data", required=True)
     p.add_argument("--compensated-features", required=True)
     p.add_argument("--output", required=True)
-    p.add_argument("--mode", choices=["oracle", "pilot_ls"], required=True)
+    p.add_argument("--mode", choices=["oracle", "pilot_ls", "oracle_operator"], required=True)
     p.add_argument("--channel-length", type=int, default=8)
     p.add_argument("--ridge", type=float, default=1e-2)
     p.add_argument("--equalizer-regularization", type=float, default=1e-3)
+    p.add_argument("--oracle-max-iterations", type=int, default=1000)
     p.add_argument("--sps", type=int, default=8)
     p.add_argument("--rrc-beta", type=float, default=0.35)
     p.add_argument("--rrc-span", type=int, default=8)
@@ -85,6 +87,8 @@ def main() -> None:
     shutil.copy2(source, output)
 
     with h5py.File(args.raw_data, "r") as raw, h5py.File(output, "r+") as feature:
+        if args.mode == "oracle" and "channel_doppler_hz" in raw and np.any(raw["channel_doppler_hz"][:] != 0):
+            raise ValueError("Static oracle cannot invert time-varying taps; use oracle_operator.")
         if "channel_taps" not in raw:
             raise KeyError("Raw dataset does not contain channel_taps; regenerate with tap provenance.")
         n = int(raw["iq"].shape[0])
@@ -95,9 +99,30 @@ def main() -> None:
             del feature["equalizer_tap_nmse"]
         estimated_all = feature.create_dataset("equalizer_taps", shape=(n, length), dtype="complex64", compression="gzip")
         nmse_all = feature.create_dataset("equalizer_tap_nmse", shape=(n,), dtype="float32", compression="gzip")
+        if args.mode == "oracle_operator":
+            stops = feature.create_dataset("oracle_solver_stop", shape=(n,), dtype="int32")
+            iterations = feature.create_dataset("oracle_solver_iterations", shape=(n,), dtype="int32")
         for i in range(n):
             y_iq = np.asarray(feature["iq_comp"][i], dtype=np.float64)
             y = y_iq[0] + 1j * y_iq[1]
+            if args.mode == "oracle_operator":
+                delays = np.asarray(raw["channel_delays"][i], dtype=int)
+                frequencies = (raw["channel_doppler_hz"][i] if "channel_doppler_hz" in raw else np.zeros(len(delays)))
+                coefficients = compensated_path_coefficients(
+                    raw["channel_taps"][i], delays, frequencies, len(y), float(raw["fs"][i]),
+                    float(feature["mu_hat"][i]),
+                    float(feature["external_fd0_hat"][i]) if "external_fd0_hat" in feature else 0.,
+                )
+                y_eq, diagnostic = oracle_equalize(y, coefficients, delays, float(args.equalizer_regularization), args.oracle_max_iterations)
+                feature["iq_comp"][i] = np.stack((y_eq.real, y_eq.imag)).astype(np.float32)
+                stops[i], iterations[i] = diagnostic["stop_code"], diagnostic["iterations"]
+                nmse_all[i] = 0.
+                # Snapshot only; the actual inversion uses the full coefficient trajectories.
+                stored = np.zeros(length, dtype=np.complex64)
+                snapshot = raw["channel_taps"][i]
+                stored[:min(length, len(snapshot))] = snapshot[:length]
+                estimated_all[i] = stored
+                continue
             true = np.asarray(raw["channel_taps"][i], dtype=np.complex128)[:length]
             if true.size < length:
                 true = np.pad(true, (0, length - true.size))
@@ -122,6 +147,7 @@ def main() -> None:
             "channel_length": length,
             "ridge": float(args.ridge),
             "equalizer_regularization": float(args.equalizer_regularization),
+            "oracle_max_iterations": args.oracle_max_iterations if args.mode == "oracle_operator" else None,
             "source": str(source),
             "raw_data": args.raw_data,
         }

@@ -1,7 +1,10 @@
 # Practical-extension protocol
 
-The current paper includes the joint-impairment protocol below. Use the
-promoted hybrid DFRFT commands in `RUN_HYBRID_DFRFT.md` for its receiver.
+The current paper includes the joint-impairment protocol below. Its receiver
+uses DCFT-based chirp-focus acquisition with coherent local refinement.
+The `hybrid_dfrft` estimator option and historical script names are retained
+for compatibility; the training and evaluation runner is
+[`scripts/18_run_hybrid_dfrft_seeds.py`](../scripts/18_run_hybrid_dfrft_seeds.py).
 
 ## Joint-impairment split
 
@@ -24,7 +27,7 @@ noise:
   --phase-noise-std-rad 0.0001 --phase-noise-mode random_walk
 ```
 
-Use `scripts/06_precompute_pilot_mu.py` with joint CFO search bounds covering
+Use `scripts/06_precompute_pilot_mu.py --estimator-type hybrid_dfrft` with joint CFO search bounds covering
 the generated interval, then rebuild compensated I/Q and all-candidate EVM
 features with scripts 09 and 10. Train on the new train split, select all
 hyperparameters on validation only, and report the untouched test split. A
@@ -37,13 +40,17 @@ Generate pass-structured data with:
 
 ```powershell
 & .\.venv\Scripts\python.exe scripts\02_generate_track_dataset.py `
-  --config configs\dataset\leo_orbital_pass_holdout.yaml `
-  --output data\processed\leo_orbital_pass_holdout.h5 `
-  --splits-output data\splits\leo_orbital_pass_holdout_splits.npz
+  --config configs\dataset\leo_orbital_elevation_ood_four_way.yaml `
+  --output data\processed\leo_orbital_elevation_ood_four_way.h5 `
+  --splits-output data\splits\leo_orbital_elevation_ood_four_way_splits.npz
 ```
 
-The split holds out complete maximum-elevation groups: 20/30/45/60 degrees for
-training, 75 degrees for validation, and 90 degrees for testing. The stored
+The four-way split holds out complete maximum-elevation groups: 20/30/45 degrees
+for training, 60 degrees for validation, 75 degrees for calibration, and
+90 degrees for testing, as defined in
+[`leo_orbital_elevation_ood_four_way.yaml`](../configs/dataset/leo_orbital_elevation_ood_four_way.yaml).
+Use validation for model selection and keep calibration separate from training
+and final test evaluation. The stored
 `track_id`, `maximum_elevation_deg`, and `trajectory_mode` fields must be
 audited before training. Report both frame-level accuracy and macro-average
 accuracy over passes with a pass bootstrap confidence interval.

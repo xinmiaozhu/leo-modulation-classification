@@ -1,10 +1,12 @@
-"""Pilot-aided DFRFT/chirp-focus acquisition with coherent local refinement.
+"""Pilot-aided DCFT-based chirp-focus acquisition with coherent local refinement.
 
 The estimator is intentionally modulation independent.  Known pilots are
 removed first, a physically calibrated chirp-focus bank estimates Doppler rate
 and the focused FFT peak estimates centered CFO, and the existing coherent
 pilot likelihood refines both parameters locally.  No payload label, HOC, EVM,
 or constellation candidate is used.
+
+Historical DFRFT module and class names are retained for compatibility.
 """
 
 from __future__ import annotations
@@ -48,7 +50,10 @@ class HybridDFRFTResult:
 
 
 class HybridDFRFTPilotEstimator:
-    """DFRFT-equivalent pilot chirp focusing followed by coherent refinement."""
+    """DCFT-based chirp-focus acquisition followed by coherent refinement.
+
+    The historical class name is retained for compatibility.
+    """
 
     def __init__(
         self,

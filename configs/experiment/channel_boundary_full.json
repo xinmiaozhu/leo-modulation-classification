@@ -1,0 +1,152 @@
+{
+  "description": "Publication-scale channel boundary protocol; requires completed runs before reporting",
+  "evaluation_only_nontraining_conditions": true,
+  "snr_db": [
+    -10,
+    -7,
+    -4,
+    -1,
+    2,
+    5,
+    8,
+    11,
+    14,
+    17,
+    20
+  ],
+  "train_per_class_snr": 200,
+  "val_per_class_snr": 100,
+  "test_per_class_snr": 100,
+  "data_seed": 31027,
+  "model_seeds": [
+    41,
+    73,
+    107,
+    149,
+    211
+  ],
+  "epochs": 100,
+  "batch_size": 64,
+  "threads": 4,
+  "bootstrap_draws": 10000,
+  "training_conditions": [
+    "flat",
+    "reference",
+    "tv_slow"
+  ],
+  "profiles": {
+    "flat": {
+      "delays": [
+        0
+      ],
+      "gains_db": [
+        0
+      ],
+      "doppler_hz": [
+        0
+      ]
+    },
+    "short": {
+      "delays": [
+        0,
+        1,
+        2
+      ],
+      "gains_db": [
+        0,
+        -6,
+        -10
+      ],
+      "doppler_hz": [
+        0,
+        0,
+        0
+      ]
+    },
+    "reference": {
+      "delays": [
+        0,
+        3,
+        7
+      ],
+      "gains_db": [
+        0,
+        -6,
+        -10
+      ],
+      "doppler_hz": [
+        0,
+        0,
+        0
+      ]
+    },
+    "long": {
+      "delays": [
+        0,
+        8,
+        24
+      ],
+      "gains_db": [
+        0,
+        -6,
+        -10
+      ],
+      "doppler_hz": [
+        0,
+        0,
+        0
+      ]
+    },
+    "strong_echo": {
+      "delays": [
+        0,
+        3,
+        7
+      ],
+      "gains_db": [
+        0,
+        -1,
+        -3
+      ],
+      "doppler_hz": [
+        0,
+        0,
+        0
+      ]
+    },
+    "tv_slow": {
+      "delays": [
+        0,
+        3,
+        7
+      ],
+      "gains_db": [
+        0,
+        -6,
+        -10
+      ],
+      "doppler_hz": [
+        0,
+        2,
+        -3
+      ]
+    },
+    "tv_fast": {
+      "delays": [
+        0,
+        3,
+        7
+      ],
+      "gains_db": [
+        0,
+        -6,
+        -10
+      ],
+      "doppler_hz": [
+        0,
+        10,
+        -15
+      ]
+    }
+  }
+}

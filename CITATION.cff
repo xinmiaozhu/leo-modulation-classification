@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using this metadata."
+type: software
+title: "LEO modulation classification"
+authors:
+  - name: "Yehui"
+version: 0.1.0
+abstract: >-
+  Pilot-aided carrier estimation, compensated I/Q, a 48-dimensional
+  exact-mixture constellation descriptor, and a two-stream classifier
+  for LEO modulation classification.
