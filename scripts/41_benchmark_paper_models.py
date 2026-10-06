@@ -33,7 +33,7 @@ from src.datasets.feature_dataset import _preprocess_iq
 from src.drc_hoc.compensation import compensate_full_doppler
 from src.drc_hoc.paper_features import nasa_feature_vector
 from src.drc_hoc.pilot_estimator import PilotMuEstimator, PilotMuEstimatorConfig
-from src.models.drc_triplenet import DRCTripleNet
+from src.models.drc_dualnet import DRCDualNet
 from src.models.paper_baselines import build_paper_baseline
 from src.signal.modulation import get_constellation
 from src.signal.pulse_shape import rrc_filter
@@ -68,7 +68,7 @@ METHODS = {
         "paper_starnet",
         "configs/model/paper_starnet.yaml",
     ),
-    "proposed": ("Proposed", "Proposed I/Q--constellation", "drc_triplenet", None),
+    "proposed": ("Proposed", "Proposed I/Q--constellation", "drc_dualnet", None),
 }
 
 def parse_args() -> argparse.Namespace:
@@ -162,7 +162,7 @@ def _checkpoint_model(
         cfg.setdefault("hoc_dim", 21)
         cfg.setdefault("evm_dim", int(run_config.get("evm_dim", 48)))
         cfg.setdefault("num_classes", 7)
-        model = DRCTripleNet(**cfg)
+        model = DRCDualNet(**cfg)
     else:
         cfg = _config_dict(str(config_path))
         feature_dim = int(cfg.pop("feature_dim", 128))

@@ -1,9 +1,8 @@
 """Paper receiver and published baseline models."""
 
 from .raw_stream import RawIQStream, RawIQResNetStream
-from .hoc_stream import HOCStream
 from .constellation_stream import ConstellationImageStream, EVMFeatureStream, SymbolConstellationStream
-from .drc_triplenet import DRCTripleNet, DRCTripleNetConfig, build_drc_triplenet
+from .drc_dualnet import DRCDualNet, DRCDualNetConfig, build_drc_dualnet
 from .paper_baselines import (
     CNN2Baseline,
     MCNetBaseline,
@@ -24,13 +23,12 @@ from .losses import (
 __all__ = [
     "RawIQStream",
     "RawIQResNetStream",
-    "HOCStream",
     "ConstellationImageStream",
     "EVMFeatureStream",
     "SymbolConstellationStream",
-    "DRCTripleNet",
-    "DRCTripleNetConfig",
-    "build_drc_triplenet",
+    "DRCDualNet",
+    "DRCDualNetConfig",
+    "build_drc_dualnet",
     "CNN2Baseline",
     "MCNetBaseline",
     "CNNLSTMDualStreamBaseline",

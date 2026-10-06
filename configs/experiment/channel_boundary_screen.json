@@ -12,7 +12,7 @@
   "bootstrap_draws": 2000,
   "training_conditions": ["flat", "reference", "tv_slow"],
   "profiles": {
-    "flat": {"delays": [0], "gains_db": [0], "doppler_hz": [0]},
+    "flat": {"delays": [0, 0, 0], "gains_db": [0, -6, -10], "doppler_hz": [0, 0, 0]},
     "short": {"delays": [0, 1, 2], "gains_db": [0, -6, -10], "doppler_hz": [0, 0, 0]},
     "reference": {"delays": [0, 3, 7], "gains_db": [0, -6, -10], "doppler_hz": [0, 0, 0]},
     "long": {"delays": [0, 8, 24], "gains_db": [0, -6, -10], "doppler_hz": [0, 0, 0]},

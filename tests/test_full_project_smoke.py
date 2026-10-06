@@ -6,7 +6,7 @@ import numpy as np
 
 from src.datasets.build_dataset import DatasetBuildConfig, build_dataset_arrays
 from src.drc_hoc.extractor import DRCHOCConfig, DRCHOCExtractor
-from src.models.drc_triplenet import DRCTripleNet
+from src.models.drc_dualnet import DRCDualNet
 
 
 def test_tiny_end_to_end_components():
@@ -26,7 +26,7 @@ def test_tiny_end_to_end_components():
     drc = DRCHOCExtractor(DRCHOCConfig(sample_rate_hz=1e6, estimator_type="paper_strict_dfrft", alpha_steps=41, mu_grid_min=-1000, mu_grid_max=1000, candidate_orders=(2,4), num_subwindows=4))
     out = drc.extract(arrays["iq"][0], mu_true_hz_per_s=float(arrays["mu"][0]))
     hoc_dim = out["h_drc"].shape[0]
-    model = DRCTripleNet(
+    model = DRCDualNet(
         hoc_dim=hoc_dim, evm_dim=48, num_classes=2, feature_dim=32,
         use_hoc_stream=False, use_metadata=False, use_constellation_image=False,
     )

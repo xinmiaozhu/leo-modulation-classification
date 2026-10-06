@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_scan_module():
-    path = ROOT / "scripts" / "27_validate_feature_degradation.py"
+    path = ROOT / "scripts" / "33_validate_feature_degradation.py"
     spec = importlib.util.spec_from_file_location("feature_scan_54", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot import {path}")

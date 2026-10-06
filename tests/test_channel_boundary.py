@@ -8,6 +8,24 @@ from src.signal.multipath_equalization import (
 from src.signal.signal_generator import LEOSignalGenerator, SignalSpec
 
 
+def test_flat_coincident_paths_match_static_coefficients_and_operator():
+    from src.signal.channel import ChannelConfig
+    gains = np.array([0., -6., -10.])
+    gains -= 10 * np.log10(np.sum(10 ** (gains / 10)))
+    x = np.random.default_rng(8).normal(size=256) + 1j
+    flat = NonStationaryLEOChannel(200000, 30e9, np.random.default_rng(3))
+    static = NonStationaryLEOChannel(200000, 30e9, np.random.default_rng(3))
+    _, taps = static.apply_static_multipath(x, (0, 3, 7), tuple(gains), return_taps=True)
+    y, info = flat.apply(x, ChannelConfig(channel_type='multipath',
+        multipath_delays=(0, 0, 0), multipath_gains_db=tuple(gains),
+        normalize_input_power=False, snr_db=np.inf))
+    np.testing.assert_allclose(y, taps.sum() * x, atol=1e-14)
+    np.testing.assert_array_equal(info['channel_delays'], [0])
+    coefficients = compensated_path_coefficients(info['channel_taps'],
+        info['channel_delays'], info['channel_doppler_hz'], len(x), 200000)
+    np.testing.assert_allclose(channel_operator(coefficients, info['channel_delays']) @ x, y)
+
+
 def test_zero_path_doppler_recovers_existing_static_model():
     x = np.random.default_rng(2).normal(size=100) + 1j
     a = NonStationaryLEOChannel(200000, 30e9, np.random.default_rng(3))
@@ -63,7 +81,7 @@ def test_runner_invalidates_cache_for_upstream_changes_and_missing_output(tmp_pa
     from pathlib import Path
     from types import SimpleNamespace
 
-    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/51_run_channel_boundary.py"))
+    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/22_run_channel_boundary.py"))
     run = runner["run_step"]
     monkeypatch.setitem(run.__globals__, "ROOT", tmp_path)
     (tmp_path / "scripts").mkdir()
@@ -99,7 +117,7 @@ def test_training_resume_uses_only_matching_pending_run(tmp_path, monkeypatch):
     from pathlib import Path
     from types import SimpleNamespace
 
-    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/51_run_channel_boundary.py"))
+    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/22_run_channel_boundary.py"))
     run = runner["run_step"]
     monkeypatch.setitem(run.__globals__, "ROOT", tmp_path)
     for folder in ("scripts", "src", "logs", "checkpoint"):
@@ -134,7 +152,7 @@ def test_evaluation_only_generation_preserves_paired_test_samples(tmp_path):
     import h5py
 
     root = Path(__file__).resolve().parents[1]
-    runner = runpy.run_path(str(root / "scripts/51_run_channel_boundary.py"))
+    runner = runpy.run_path(str(root / "scripts/22_run_channel_boundary.py"))
     config = {"evaluation_only_nontraining_conditions": True, "training_conditions": ["flat"],
               "train_per_class_snr": 1, "val_per_class_snr": 1, "test_per_class_snr": 2}
     for condition in ("flat", "short"):

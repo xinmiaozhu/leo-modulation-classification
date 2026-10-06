@@ -2,7 +2,7 @@
 """Precompute DRC-HOC features using an externally supplied mu_hat.
 
 This is intended for pilot-aided or trajectory-level mu estimates.  The normal
-``08_precompute_drc_hoc.py`` script estimates mu internally before HOC
+``11_precompute_drc_hoc.py`` script estimates mu internally before HOC
 compensation; this script skips that blind estimator and uses an existing HDF5
 dataset such as ``pilot_mu_hat`` or ``mu_hat_joint``.
 """

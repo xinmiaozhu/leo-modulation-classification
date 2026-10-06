@@ -64,7 +64,7 @@ def main() -> None:
                 sys.executable, "scripts/13_train_model.py",
                 "--raw-data", RAW, "--feature-data", FEATURE,
                 "--symbol-feature-data", SYMBOL, "--splits", TRAIN_SPLITS,
-                "--model", "drc_triplenet", "--model-config", "configs/model/triplenet_iq_evm.yaml",
+                "--model", "drc_dualnet", "--model-config", "configs/model/dualnet_iq_evm.yaml",
                 "--train-config", "configs/train/train_long.yaml", "--output-dir", str(ckpt_dir.relative_to(ROOT)),
                 "--seed", str(seed), "--device", args.device, "--num-workers", "0",
                 "--iq-source", "comp", "--iq-representation", "iq", "--iq-normalize", "zscore", "--cache-iq",
@@ -81,8 +81,8 @@ def main() -> None:
                 run([
                     sys.executable, "scripts/14_evaluate_model.py", "--checkpoint", str(best.relative_to(ROOT)),
                     "--raw-data", RAW, "--feature-data", FEATURE, "--symbol-feature-data", SYMBOL,
-                    "--splits", splits, "--split", "test", "--model", "drc_triplenet",
-                    "--model-config", "configs/model/triplenet_iq_evm.yaml", "--output", str(output.relative_to(ROOT)),
+                    "--splits", splits, "--split", "test", "--model", "drc_dualnet",
+                    "--model-config", "configs/model/dualnet_iq_evm.yaml", "--output", str(output.relative_to(ROOT)),
                     "--summary-output", str(summary.relative_to(ROOT)), "--batch-size", "256", "--num-workers", "0",
                     "--device", args.device, "--strict", "--load-into-memory",
                 ])

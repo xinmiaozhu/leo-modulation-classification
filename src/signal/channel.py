@@ -167,7 +167,9 @@ class NonStationaryLEOChannel:
                 gains_db=config.multipath_gains_db,
                 return_taps=True,
             )
-            channel_delays = np.asarray(config.multipath_delays, dtype=np.int64)
+            # Dense taps already sum coincident paths. Store each effective
+            # delay once so downstream operators do not count that sum twice.
+            channel_delays = np.unique(np.asarray(config.multipath_delays, dtype=np.int64))
         else:
             raise ValueError(f"Unsupported channel_type: {config.channel_type}")
 

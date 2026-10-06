@@ -192,12 +192,9 @@ def main() -> None:
     fig.subplots_adjust(left=0.086, right=0.993, bottom=0.19, top=0.92, wspace=0.14)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, bbox_inches="tight")
-    fig.savefig(output.with_suffix(".png"), dpi=220, bbox_inches="tight")
     for saved in save_fig2_sized_panels(fig, axes, output):
         print(saved)
     plt.close(fig)
-    print(output)
 
 
 if __name__ == "__main__":

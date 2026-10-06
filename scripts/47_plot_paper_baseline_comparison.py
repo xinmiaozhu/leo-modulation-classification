@@ -23,22 +23,22 @@ from src.plotting.common import IEEE_TRANS_PALETTE, boxed_legend, format_ieee_ax
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Plot paper-baseline AMC comparison.")
-    p.add_argument("--summary", type=str, default="outputs/results/paper_baselines/summary.csv")
+    p.add_argument("--summary", type=str, default="outputs/results/exact_mixture/protocol_a_seed41_baseline_figure_manifest.csv")
     p.add_argument("--output-dir", type=str, default="outputs/figures/paper")
     p.add_argument(
         "--accuracy-output",
         type=str,
-        default="paper_baseline_accuracy_vs_snr.pdf",
+        default="paper_baseline_protocol_a_seed41_accuracy_vs_snr.pdf",
     )
     p.add_argument(
         "--overall-output",
         type=str,
-        default="paper_baseline_overall_accuracy.pdf",
+        default="paper_baseline_protocol_a_seed41_overall_accuracy.pdf",
     )
     p.add_argument(
         "--table-output",
         type=str,
-        default="outputs/results/paper_baselines/snr_curve.csv",
+        default="outputs/results/exact_mixture/protocol_a_seed41_baseline_snr_curve.csv",
     )
     p.add_argument("--fig-width", type=float, default=3.0)
     p.add_argument("--fig-height", type=float, default=2.7)

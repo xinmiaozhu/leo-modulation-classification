@@ -74,7 +74,6 @@ def parse_args() -> argparse.Namespace:
         default=7.0,
         help="Font size for modulation-class tick labels.",
     )
-    p.add_argument("--combined", action="store_true", help="Draw all SNR ranges in one combined figure.")
     p.add_argument("--show-title", action="store_true", help="Show SNR range title above each matrix.")
     p.add_argument("--dpi", type=int, default=600)
     return p.parse_args()
@@ -257,13 +256,12 @@ def main() -> None:
 
     set_trans_style()
 
-    def draw_matrix(ax, cm: np.ndarray, cm_norm: np.ndarray, count: int, title: str, panel_idx: int = 0):
+    def draw_matrix(ax, cm: np.ndarray, cm_norm: np.ndarray, count: int, title: str):
         cmap = plt.get_cmap("Blues").copy()
         cmap.set_bad(color="white")
         im = ax.imshow(100.0 * cm_norm, cmap=cmap, vmin=0.0, vmax=100.0)
         if args.show_title:
-            prefix = f"({chr(ord('a') + panel_idx)}) " if args.combined else ""
-            ax.set_title(f"{prefix}{title}, N={count}")
+            ax.set_title(f"{title}, N={count}")
         ax.set_xlabel("Predicted class", fontsize=args.axis_label_fontsize)
         ax.set_ylabel("True class", fontsize=args.axis_label_fontsize)
         ax.set_xticks(np.arange(num_classes))
@@ -302,34 +300,15 @@ def main() -> None:
         return im
 
     saved_paths: list[Path] = []
-    if args.combined:
-        fig, axes = plt.subplots(1, len(matrices), figsize=(max(args.fig_width, 3.45 * len(matrices)), args.fig_height), squeeze=False)
-        axes_flat = axes.ravel()
-        im = None
-        for panel_idx, (ax, item) in enumerate(zip(axes_flat, matrices)):
-            im = draw_matrix(
-                ax,
-                item["cm"],
-                item["cm_norm"],
-                int(item["count"]),
-                str(item["title"]),
-                panel_idx=panel_idx,
-            )
-        cbar = fig.colorbar(im, ax=axes_flat.tolist(), fraction=0.03, pad=0.02)
+    for item in matrices:
+        fig, ax = plt.subplots(figsize=(args.fig_width, args.fig_height))
+        im = draw_matrix(ax, item["cm"], item["cm_norm"], int(item["count"]), str(item["title"]))
+        cbar = fig.colorbar(im, ax=ax, fraction=0.045, pad=0.03)
         cbar.set_label("Row-normalized accuracy (%)", fontsize=args.axis_label_fontsize)
-        fig.savefig(out_path)
+        pdf_path = out_path.with_name(f"{out_path.stem}_{item['suffix']}{out_path.suffix}")
+        fig.savefig(pdf_path)
         plt.close(fig)
-        saved_paths.append(out_path)
-    else:
-        for item in matrices:
-            fig, ax = plt.subplots(figsize=(args.fig_width, args.fig_height))
-            im = draw_matrix(ax, item["cm"], item["cm_norm"], int(item["count"]), str(item["title"]))
-            cbar = fig.colorbar(im, ax=ax, fraction=0.045, pad=0.03)
-            cbar.set_label("Row-normalized accuracy (%)", fontsize=args.axis_label_fontsize)
-            pdf_path = out_path.with_name(f"{out_path.stem}_{item['suffix']}{out_path.suffix}")
-            fig.savefig(pdf_path)
-            plt.close(fig)
-            saved_paths.append(pdf_path)
+        saved_paths.append(pdf_path)
 
     for item in matrices:
         cm = item["cm"]

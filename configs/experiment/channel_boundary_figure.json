@@ -1,5 +1,5 @@
 {
-  "description": "Publication-scale channel boundary protocol; requires completed runs before reporting",
+  "description": "Seven paper curves; paired three-path flat fading versus frequency-selective channels; fixed received SNR",
   "evaluation_only_nontraining_conditions": true,
   "snr_db": [
     -10,
@@ -52,23 +52,6 @@
         0
       ]
     },
-    "short": {
-      "delays": [
-        0,
-        1,
-        2
-      ],
-      "gains_db": [
-        0,
-        -6,
-        -10
-      ],
-      "doppler_hz": [
-        0,
-        0,
-        0
-      ]
-    },
     "reference": {
       "delays": [
         0,
@@ -96,23 +79,6 @@
         0,
         -6,
         -10
-      ],
-      "doppler_hz": [
-        0,
-        0,
-        0
-      ]
-    },
-    "strong_echo": {
-      "delays": [
-        0,
-        3,
-        7
-      ],
-      "gains_db": [
-        0,
-        -1,
-        -3
       ],
       "doppler_hz": [
         0,
@@ -154,5 +120,8 @@
         -15
       ]
     }
-  }
+  },
+  "receiver_modes": [
+    "unequalized"
+  ]
 }

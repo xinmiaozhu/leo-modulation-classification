@@ -123,8 +123,7 @@ def save_axes_panels(
 ) -> list[Path]:
     """Save each axes of a multi-panel figure as a separate panel file.
 
-    The combined figure is still useful as a quick preview, but the manuscript
-    can include the returned ``*_a.pdf``, ``*_b.pdf``, ... files individually.
+    The manuscript can include the returned ``*_a.pdf``, ``*_b.pdf``, ... files individually.
     Inset axes attached to a parent axes are included in the parent panel crop.
     """
 

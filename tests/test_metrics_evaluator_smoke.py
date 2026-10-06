@@ -1,9 +1,9 @@
-"""Smoke tests for training modules."""
+"""Smoke tests for accuracy metrics and the evaluator."""
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.models.drc_triplenet import DRCTripleNet
+from src.models.drc_dualnet import DRCDualNet
 from src.training.metrics import accuracy_from_logits
 from src.training.evaluator import Evaluator
 
@@ -32,7 +32,7 @@ def test_evaluator_with_fake_loader():
                 "domain_id": torch.tensor(0, dtype=torch.long),
             }
 
-    model = DRCTripleNet(
+    model = DRCDualNet(
         hoc_dim=21, evm_dim=48, num_classes=2, feature_dim=32,
         use_hoc_stream=False, use_metadata=False, use_constellation_image=False,
     )

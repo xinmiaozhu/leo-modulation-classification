@@ -1,7 +1,7 @@
 """Smoke test for physics and signal modules.
 
-Run from project root after merging this step:
-    python -m pytest tests/test_step2_smoke.py
+Run from the project root:
+    python -m pytest tests/test_physics_signal_smoke.py
 """
 
 import numpy as np

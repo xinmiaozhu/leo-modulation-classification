@@ -38,7 +38,7 @@ PROTOCOLS = {
     },
 }
 METHODS = {
-    "proposed": ("drc_triplenet", "configs/model/triplenet_iq_evm.yaml", True),
+    "proposed": ("drc_dualnet", "configs/model/dualnet_iq_evm.yaml", True),
     "mcnet": ("paper_mcnet", "configs/model/paper_mcnet.yaml", False),
 }
 

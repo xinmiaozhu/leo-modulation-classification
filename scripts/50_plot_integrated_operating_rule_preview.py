@@ -256,11 +256,8 @@ def main() -> None:
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, bbox_inches="tight")
-    fig.savefig(output.with_suffix(".png"), dpi=220, bbox_inches="tight")
     panel_files = save_fig2_sized_panels(fig, [ax_response, ax_closure], output)
     plt.close(fig)
-    print(output)
     for path in panel_files:
         print(path)
 

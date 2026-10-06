@@ -27,11 +27,10 @@ from mpl_toolkits.axes_grid1.inset_locator import mark_inset
 
 from src.datasets.feature_dataset import _preprocess_iq
 from src.drc_hoc.cumulants import _partitions_tuple
-from src.models import DRCTripleNet
+from src.models import DRCDualNet
 from src.physics.gamma_metric import discrete_attenuation_factor
 from src.plotting.common import (
     IEEE_TRANS_PALETTE,
-    add_panel_label,
     boxed_legend,
     format_ieee_axis,
     save_axes_panels,
@@ -555,7 +554,7 @@ def _load_fixed_classifier(
     hoc_dim: int,
     evm_dim: int,
     device: torch.device,
-) -> tuple[DRCTripleNet, dict[str, object], dict[str, object]]:
+) -> tuple[DRCDualNet, dict[str, object], dict[str, object]]:
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     run_config = dict(checkpoint.get("config", {}))
     model_config = dict(run_config.get("model_config", {}))
@@ -566,7 +565,7 @@ def _load_fixed_classifier(
             "evm_dim": int(evm_dim),
         }
     )
-    model = DRCTripleNet(**model_config)
+    model = DRCDualNet(**model_config)
     model.load_state_dict(checkpoint.get("model_state_dict", checkpoint), strict=True)
     model.to(device)
     model.eval()
@@ -687,7 +686,7 @@ def _build_evm_features_for_frame(
 
 @torch.inference_mode()
 def _predict_fixed_classifier(
-    model: DRCTripleNet,
+    model: DRCDualNet,
     model_config: dict[str, object],
     iq: np.ndarray,
     evm_features: np.ndarray,
@@ -775,7 +774,7 @@ def _controlled_classification_scan(
     if not np.allclose(fs_values, fs):
         raise ValueError("Controlled classification scan requires a common sample rate.")
 
-    loaded: dict[str, tuple[DRCTripleNet, dict[str, object], dict[str, object]]] = {}
+    loaded: dict[str, tuple[DRCDualNet, dict[str, object], dict[str, object]]] = {}
     for name, checkpoint in checkpoints.items():
         if not checkpoint.exists():
             raise FileNotFoundError(f"Missing fixed classifier checkpoint: {checkpoint}")
@@ -1160,9 +1159,6 @@ def _plot(
     fig.subplots_adjust(left=0.085, right=0.995, top=0.98, bottom=0.115, hspace=0.47, wspace=0.38)
     output.parent.mkdir(parents=True, exist_ok=True)
     save_axes_panels(fig, [axes[0], axes[1], axes[2], accuracy_ax], output)
-    for axis_index, ax in enumerate([axes[0], axes[1], axes[2], accuracy_ax]):
-        add_panel_label(ax, f"({chr(ord('a') + axis_index)})", y=-0.27)
-    fig.savefig(output)
     plt.close(fig)
 
 
@@ -1338,7 +1334,7 @@ def main() -> None:
         )
         print(summary.to_string(index=False))
         print(f"Saved conditional accuracy scan: {classification_path}")
-        print(f"Updated figure: {args.figure}")
+        print(f"Updated separate panels for: {args.figure}")
         return
 
     if args.plot_only:
@@ -1548,7 +1544,7 @@ def main() -> None:
             encoding="utf-8",
         )
         print(stability_table.to_string(index=False))
-        print(f"Saved figure: {args.figure}")
+        print(f"Saved separate panels for: {args.figure}")
         return
 
     gamma_bins = np.asarray(
@@ -1819,7 +1815,7 @@ def main() -> None:
     print(boundary_table.to_string(index=False))
     print(dfrft_by_snr.to_string(index=False))
     print(json.dumps(summary["dfrft_overall"], indent=2))
-    print(f"Saved figure: {figure_path}")
+    print(f"Saved separate panels for: {figure_path}")
 
 
 if __name__ == "__main__":

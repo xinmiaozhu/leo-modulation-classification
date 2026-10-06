@@ -2,7 +2,7 @@
 """Precompute DRC-HOC features from a raw HDF5 dataset.
 
 Example:
-    python scripts/08_precompute_drc_hoc.py \
+    python scripts/11_precompute_drc_hoc.py \
         --raw-data data/processed/leo_sband.h5 \
         --output data/features/leo_sband_drc_hoc.h5 \
         --config configs/experiment/exp_drc_hoc.yaml

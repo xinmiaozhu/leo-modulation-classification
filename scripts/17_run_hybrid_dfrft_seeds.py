@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run resumable Protocol-B five-seed tests with the promoted hybrid DFRFT front end."""
+"""Train and test all seven Protocol-B methods with the hybrid DFRFT front end."""
 
 from __future__ import annotations
 
@@ -22,10 +22,15 @@ DATA = {
     "splits": "data/splits/leo_7mods_joint_practical_splits.npz",
 }
 METHODS = {
-    "proposed": ("drc_triplenet", "configs/model/triplenet_iq_evm.yaml", True),
+    "cnn2": ("paper_cnn2", "configs/model/paper_cnn2.yaml", False),
+    "cnn_lstm_dual": ("paper_cnn_lstm_dual", "configs/model/paper_cnn_lstm_dual.yaml", False),
+    "satellite_cnn": ("paper_satellite_cnn", "configs/model/paper_satellite_cnn.yaml", False),
+    "nasa_hoc_nn": ("paper_nasa_hoc_nn", "configs/model/paper_nasa_hoc_nn.yaml", False),
+    "proposed": ("drc_dualnet", "configs/model/dualnet_iq_evm.yaml", True),
     "mcnet": ("paper_mcnet", "configs/model/paper_mcnet.yaml", False),
     "starnet": ("paper_starnet", "configs/model/paper_starnet.yaml", False),
 }
+PAPER_FEATURE = "data/features/hybrid_dfrft/protocol_b_paper_baselines.h5"
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,8 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stages",
         nargs="+",
-        choices=["train", "eval", "summary"],
-        default=["train", "eval", "summary"],
+        choices=["features", "train", "eval", "summary"],
+        default=["features", "train", "eval", "summary"],
     )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--train-config", default="configs/train/train_long.yaml")
@@ -68,9 +73,25 @@ def main() -> None:
 
     checkpoint_root = ROOT / "outputs/checkpoints/hybrid_dfrft/protocol_b"
     result_root = ROOT / "outputs/results/hybrid_dfrft/protocol_b"
-    rows: list[dict[str, object]] = []
+    if "nasa_hoc_nn" in args.methods:
+        if "features" in args.stages:
+            command = [
+                sys.executable, "scripts/12_precompute_paper_baseline_features.py",
+                "--raw-data", DATA["raw"], "--comp-feature-data", DATA["feature"],
+                "--symbol-feature-data", DATA["symbol"], "--output", PAPER_FEATURE,
+            ]
+            if args.overwrite:
+                command.append("--overwrite")
+            run(command, args.dry_run)
+        elif {"train", "eval"}.intersection(args.stages) and not args.dry_run:
+            import h5py
+            with h5py.File(ROOT / PAPER_FEATURE, "r") as features:
+                if not bool(features.attrs.get("complete", False)):
+                    raise ValueError("NASA features are incomplete; run the features stage first.")
     for method in args.methods:
         model, model_config, uses_symbol = METHODS[method]
+        is_nasa = method == "nasa_hoc_nn"
+        feature_data = PAPER_FEATURE if is_nasa else DATA["feature"]
         for seed in args.seeds:
             checkpoint_dir = checkpoint_root / method / f"seed_{seed}"
             best = checkpoint_dir / "best.pt"
@@ -85,7 +106,7 @@ def main() -> None:
                     "--raw-data",
                     DATA["raw"],
                     "--feature-data",
-                    DATA["feature"],
+                    feature_data,
                     "--splits",
                     DATA["splits"],
                     "--model",
@@ -103,13 +124,18 @@ def main() -> None:
                     "--num-workers",
                     "0",
                     "--iq-source",
-                    "comp",
+                    "raw" if is_nasa else "comp",
                     "--iq-representation",
                     "iq",
                     "--iq-normalize",
-                    "zscore",
-                    "--cache-iq",
+                    "power" if method == "cnn_lstm_dual" else "zscore",
                 ]
+                if is_nasa:
+                    command.extend(["--hoc-transform", "none"])
+                else:
+                    command.append("--cache-iq")
+                    if method in {"cnn2", "cnn_lstm_dual", "satellite_cnn"}:
+                        command.append("--no-hoc-standardize")
                 if uses_symbol:
                     command.extend(["--symbol-feature-data", DATA["symbol"]])
                 if args.epochs is not None:
@@ -119,8 +145,9 @@ def main() -> None:
                     command.extend(["--resume", str(last.relative_to(ROOT))])
                 run(command, args.dry_run)
 
-            if "eval" in args.stages and (args.overwrite or not summary.exists()):
-                output.parent.mkdir(parents=True, exist_ok=True)
+            if "eval" in args.stages and (args.overwrite or not (summary.exists() and output.exists())):
+                if not args.dry_run:
+                    output.parent.mkdir(parents=True, exist_ok=True)
                 command = [
                     sys.executable,
                     "scripts/14_evaluate_model.py",
@@ -129,7 +156,7 @@ def main() -> None:
                     "--raw-data",
                     DATA["raw"],
                     "--feature-data",
-                    DATA["feature"],
+                    feature_data,
                     "--splits",
                     DATA["splits"],
                     "--split",
@@ -155,20 +182,19 @@ def main() -> None:
                     command.extend(["--symbol-feature-data", DATA["symbol"]])
                 run(command, args.dry_run)
 
-            if output.exists():
-                rows.append(
-                    {
-                        "protocol": "B",
-                        "front_end": "hybrid_dfrft",
-                        "method": method,
-                        "seed": seed,
-                        "accuracy": accuracy_from_csv(output),
-                    }
-                )
-
     if "summary" not in args.stages or args.dry_run:
         return
     result_root.mkdir(parents=True, exist_ok=True)
+    # Include earlier completed methods/seeds when running only the missing baselines.
+    rows: list[dict[str, object]] = []
+    for method in METHODS:
+        for output in sorted((result_root / method).glob("seed_*_test.csv")):
+            if not output.with_suffix(".summary.json").exists():
+                continue
+            seed = int(output.stem.split("_")[1])
+            rows.append({"protocol": "B", "front_end": "hybrid_dfrft",
+                         "method": method, "seed": seed,
+                         "accuracy": accuracy_from_csv(output)})
     runs = pd.DataFrame(rows)
     runs.to_csv(result_root / "seed_runs.csv", index=False)
     if runs.empty:
@@ -182,9 +208,11 @@ def main() -> None:
     pivot = runs.pivot(index="seed", columns="method", values="accuracy")
     paired: dict[str, object] = {}
     if "proposed" in pivot:
-        for baseline in ("mcnet", "starnet"):
+        for baseline in (method for method in METHODS if method != "proposed"):
             if baseline in pivot:
                 delta = 100.0 * (pivot["proposed"] - pivot[baseline]).dropna().to_numpy(float)
+                if not delta.size:
+                    continue
                 paired[f"proposed_minus_{baseline}"] = {
                     "count": int(delta.size),
                     "mean_delta_pp": float(delta.mean()),

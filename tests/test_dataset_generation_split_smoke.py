@@ -1,4 +1,4 @@
-"""Smoke tests for dataset generation and loading."""
+"""Smoke tests for dataset generation and stratified splitting."""
 
 from pathlib import Path
 

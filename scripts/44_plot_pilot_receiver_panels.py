@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Plot pilot-aided Doppler-rate RMSE versus a coherent-pilot reference."""
+"""Generate the two pilot-receiver panels separately, without a combined figure."""
 
 from __future__ import annotations
 
@@ -24,12 +24,13 @@ from src.plotting.common import IEEE_TRANS_PALETTE, boxed_legend, format_ieee_ax
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Plot mu RMSE-vs-SNR with an unnormalized coherent-pilot information reference."
+        description="Generate separate SNR-error and pilot-count receiver panels."
     )
-    p.add_argument("--raw-data", type=str, required=True)
-    p.add_argument("--pilot-feature", type=str, required=True)
-    p.add_argument("--output", type=str, default="outputs/figures/paper/mu_rmse_vs_snr_pilot_crlb.pdf")
-    p.add_argument("--csv-output", type=str, default=None)
+    p.add_argument("--raw-data", default="data/processed/leo_7mods_snr_balanced_independent_test_pilot.h5")
+    p.add_argument("--pilot-feature", default="data/features/leo_7mods_snr_balanced_independent_test_pilot_mu_coherent.h5")
+    p.add_argument("--pilot-count-summary", default="outputs/results/practical_receiver_checks_coherent/pilot_count_summary.csv")
+    p.add_argument("--output-dir", type=Path, default=Path("outputs/figures/paper"))
+    p.add_argument("--results-dir", type=Path, default=Path("outputs/results/practical_receiver_checks_coherent"))
     p.add_argument("--mu-key", type=str, default="pilot_mu_hat")
     p.add_argument("--valid-key", type=str, default="pilot_valid")
     p.add_argument("--pilot-indices-key", type=str, default="pilot_indices")
@@ -117,9 +118,11 @@ def set_trans_style() -> None:
 
 def main() -> None:
     args = parse_args()
-    out_path = Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    csv_path = Path(args.csv_output) if args.csv_output else out_path.with_suffix(".csv")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    args.results_dir.mkdir(parents=True, exist_ok=True)
+    out_path = args.output_dir / "pilot_receiver_characterization_coherent_a.pdf"
+    csv_path = args.results_dir / "pilot_receiver_snr_error.csv"
+    count_table = pd.read_csv(args.pilot_count_summary).sort_values("pilot_count")
 
     with h5py.File(args.raw_data, "r") as raw, h5py.File(args.pilot_feature, "r") as feat:
         if args.mu_key not in feat:
@@ -182,6 +185,8 @@ def main() -> None:
                 "pilot_rmse_hz_per_s": rmse,
                 "pilot_mae_hz_per_s": mae,
                 "pilot_bias_hz_per_s": bias,
+                "q50_abs_error_hz_per_s": float(np.quantile(np.abs(err[mask]), 0.5)),
+                "q90_abs_error_hz_per_s": float(np.quantile(np.abs(err[mask]), 0.9)),
                 "conditional_crlb_rmse_hz_per_s": conditional_crlb_rmse,
             }
         )
@@ -201,7 +206,7 @@ def main() -> None:
         markerfacecolor="white",
         markeredgecolor=IEEE_TRANS_PALETTE["black"],
         markeredgewidth=0.8,
-        label="Estimator",
+        label="RMSE",
     )
     ax.semilogy(
         x,
@@ -211,24 +216,48 @@ def main() -> None:
         marker="s",
         markerfacecolor=IEEE_TRANS_PALETTE["red"],
         markeredgecolor=IEEE_TRANS_PALETTE["red"],
-        label="Coherent-pilot information reference",
+        label="Coherent-pilot reference",
     )
 
+    for column, label, color, marker in (
+        ("q50_abs_error_hz_per_s", r"Q50 ($|e_\mu|$)", "blue", "^"),
+        ("q90_abs_error_hz_per_s", r"Q90 ($|e_\mu|$)", "orange", "D"),
+    ):
+        ax.semilogy(x, table[column], label=label, color=IEEE_TRANS_PALETTE[color], marker=marker)
     ax.set_xlabel("SNR (dB)")
-    ax.set_ylabel(r"RMSE of $\hat{\mu}$ (Hz/s)")
+    ax.set_ylabel("Doppler-rate error (Hz/s)")
     ax.set_xlim(float(snr_bins[0]), float(snr_bins[-1]))
-    ax.set_xticks(snr_bins)
+    ax.set_xticks(x)
     format_ieee_axis(ax)
     set_panel_aspect_10_9(ax)
     ax.grid(True, which="minor", axis="y", linestyle=":", alpha=0.3)
     boxed_legend(ax, loc="upper right", fontsize=8.0)
 
-    fig.savefig(out_path)
+    fig.savefig(out_path, dpi=args.dpi)
     plt.close(fig)
 
     print(table.to_string(index=False))
     print(f"Saved figure: {out_path}")
     print(f"Saved table: {csv_path}") 
+
+    fig, ax = plt.subplots(figsize=(args.fig_width, args.fig_height))
+    for column, label, color, marker in (
+        ("rmse_hz_per_s", "RMSE", "black", "o"),
+        ("mae_hz_per_s", "MAE", "blue", "s"),
+        ("p95_abs_error_hz_per_s", "P95 absolute error", "red", "^"),
+    ):
+        ax.semilogy(count_table["pilot_count"], count_table[column],
+                    label=label, color=IEEE_TRANS_PALETTE[color], marker=marker)
+    ax.set_xlabel(r"Pilots used for $\hat{\mu}$ search")
+    ax.set_ylabel("Doppler-rate error (Hz/s)")
+    ax.set_xticks(count_table["pilot_count"])
+    format_ieee_axis(ax)
+    set_panel_aspect_10_9(ax)
+    boxed_legend(ax, loc="upper right", fontsize=8.0)
+    panel_b = args.output_dir / "pilot_receiver_characterization_coherent_b.pdf"
+    fig.savefig(panel_b, dpi=args.dpi)
+    plt.close(fig)
+    print(f"Saved figure: {panel_b}")
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ from src.datasets.feature_dataset import (
     compute_metadata_stats,
 )
 from src.datasets.split import load_split_indices
-from src.models.drc_triplenet import DRCTripleNet
+from src.models.drc_dualnet import DRCDualNet
 from src.models.losses import DRCTrainingLoss, STARNetTrainingLoss
 from src.models.paper_baselines import PAPER_BASELINE_MODELS, build_paper_baseline
 from src.training.trainer import TrainConfig, Trainer
@@ -41,9 +41,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="drc_triplenet",
+        default="drc_dualnet",
         choices=[
-            "drc_triplenet",
+            "drc_dualnet",
             *sorted(PAPER_BASELINE_MODELS),
         ],
     )
@@ -210,8 +210,8 @@ def _load_train_config(args: argparse.Namespace) -> TrainConfig:
 
 def _load_model_config(args: argparse.Namespace) -> dict[str, Any]:
     if args.model_config is None:
-        if args.model == "drc_triplenet":
-            return load_config(PROJECT_ROOT / "configs/model/triplenet_iq_evm.yaml").model.to_dict()
+        if args.model == "drc_dualnet":
+            return load_config(PROJECT_ROOT / "configs/model/dualnet_iq_evm.yaml").model.to_dict()
         return {}
     cfg = load_config(args.model_config)
     if "model" in cfg:
@@ -222,7 +222,7 @@ def _load_model_config(args: argparse.Namespace) -> dict[str, Any]:
 def _model_input_flags(args: argparse.Namespace) -> tuple[bool, bool, bool]:
     if args.model in PAPER_BASELINE_MODELS:
         return False, False, False
-    if args.model != "drc_triplenet":
+    if args.model != "drc_dualnet":
         return True, False, False
     model_cfg = _load_model_config(args)
     return (
@@ -237,11 +237,11 @@ def _model_branch_inputs(args: argparse.Namespace) -> tuple[bool, bool]:
         return False, True
     if args.model in PAPER_BASELINE_MODELS:
         return True, False
-    if args.model == "drc_triplenet":
+    if args.model == "drc_dualnet":
         model_cfg = _load_model_config(args)
         return (
             bool(model_cfg.get("use_iq_stream", True)),
-            bool(model_cfg.get("use_hoc_stream", True)),
+            bool(model_cfg.get("use_hoc_stream", False)),
         )
     return True, True
 
@@ -270,15 +270,15 @@ def build_model(
     if hoc_dim is None:
         raise ValueError(f"Model {args.model} requires --feature-data.")
 
-    if args.model == "drc_triplenet":
+    if args.model == "drc_dualnet":
         if evm_dim is None:
-            raise ValueError("Model drc_triplenet requires --symbol-feature-data.")
+            raise ValueError("Model drc_dualnet requires --symbol-feature-data.")
         model_cfg.setdefault("hoc_dim", hoc_dim)
         model_cfg.setdefault("evm_dim", evm_dim)
         model_cfg.setdefault("num_classes", num_classes)
         model_cfg.setdefault("feature_dim", feature_dim)
         model_cfg.setdefault("dropout", dropout)
-        return DRCTripleNet(**model_cfg)
+        return DRCDualNet(**model_cfg)
 
     raise ValueError(f"Unsupported model: {args.model}")
 
@@ -290,8 +290,8 @@ def build_datasets(args: argparse.Namespace):
 
     if args.feature_data is None:
         raise ValueError("--feature-data is required for dual/HOC models.")
-    if args.model == "drc_triplenet" and args.symbol_feature_data is None:
-        raise ValueError("--symbol-feature-data is required for drc_triplenet.")
+    if args.model == "drc_dualnet" and args.symbol_feature_data is None:
+        raise ValueError("--symbol-feature-data is required for drc_dualnet.")
     use_metadata, use_constellation, use_evm_features = _model_input_flags(args)
     include_iq, include_hoc = _model_branch_inputs(args)
     metadata_stats = (

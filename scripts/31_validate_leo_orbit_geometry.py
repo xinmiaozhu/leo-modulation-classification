@@ -24,7 +24,6 @@ from matplotlib.ticker import MaxNLocator
 from src.physics.leo_orbit import circular_pass_profile
 from src.plotting.common import (
     IEEE_TRANS_PALETTE,
-    add_panel_label,
     boxed_legend,
     format_ieee_axis,
     save_axes_panels,
@@ -381,18 +380,8 @@ def main() -> None:
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    save_axes_panels(fig, axes, output)
+    panel_files = save_axes_panels(fig, axes, output)
 
-    for label, ax in zip(("(a)", "(b)"), axes):
-        add_panel_label(ax, label, y=-0.24, fontsize=10.0)
-    fig.subplots_adjust(
-        wspace=0.08,
-        bottom=0.20,
-        top=0.98,
-        left=0.06,
-        right=0.99,
-    )
-    fig.savefig(output)
     plt.close(fig)
     metadata = {
         "geometry": "spherical Earth, circular orbit, great-circle pass",
@@ -418,7 +407,8 @@ def main() -> None:
     )
     print(summary.to_string(index=False))
     print(local_summary.to_string(index=False))
-    print(f"Saved figure: {output}")
+    for panel in panel_files:
+        print(f"Saved figure: {panel}")
 
 
 if __name__ == "__main__":

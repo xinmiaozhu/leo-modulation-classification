@@ -13,7 +13,7 @@ if (Test-Path -LiteralPath $launcherRecord) {
     }
 }
 $experimentArguments = @(
-    '-u', 'scripts/51_run_channel_boundary.py',
+    '-u', 'scripts/22_run_channel_boundary.py',
     '--config', 'configs/experiment/channel_boundary_full.json',
     '--output-dir', 'outputs/channel_boundary_full', '--device', 'cuda'
 )

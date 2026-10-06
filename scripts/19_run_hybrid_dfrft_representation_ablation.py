@@ -22,8 +22,8 @@ DATA = {
     "splits": "data/splits/leo_7mods_joint_practical_splits.npz",
 }
 METHODS = {
-    "iq_only": "configs/model/triplenet_iq_only.yaml",
-    "constellation_only": "configs/model/triplenet_evm_only.yaml",
+    "iq_only": "configs/model/dualnet_iq_only.yaml",
+    "constellation_only": "configs/model/dualnet_evm_only.yaml",
 }
 DISPLAY = {
     "iq_only": "I/Q only",
@@ -105,7 +105,7 @@ def main() -> None:
                         "--splits",
                         DATA["splits"],
                         "--model",
-                        "drc_triplenet",
+                        "drc_dualnet",
                         "--model-config",
                         METHODS[method],
                         "--train-config",
@@ -152,7 +152,7 @@ def main() -> None:
                         "--split",
                         "test",
                         "--model",
-                        "drc_triplenet",
+                        "drc_dualnet",
                         "--model-config",
                         METHODS[method],
                         "--output",

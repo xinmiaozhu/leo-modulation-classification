@@ -1,4 +1,4 @@
-"""Three-stream DRC network with raw I/Q, HOC and constellation branches."""
+"""DRC network for compensated I/Q and constellation descriptors."""
 
 from __future__ import annotations
 
@@ -10,12 +10,11 @@ from torch import nn
 
 from .constellation_stream import SymbolConstellationStream
 from .constellation_stream import ConstellationImageStream, EVMFeatureStream
-from .hoc_stream import HOCStream
 from .raw_stream import RawIQResNetStream, RawIQStream
 
 
 @dataclass
-class DRCTripleNetConfig:
+class DRCDualNetConfig:
     hoc_dim: int
     evm_dim: int
     num_classes: int
@@ -34,9 +33,9 @@ class DRCTripleNetConfig:
     fusion_hidden_dim: int = 256
     fusion_type: str = "mlp"
     use_iq_stream: bool = True
-    use_hoc_stream: bool = True
-    use_metadata: bool = True
-    use_constellation_image: bool = True
+    use_hoc_stream: bool = False
+    use_metadata: bool = False
+    use_constellation_image: bool = False
     use_evm_features: bool = True
     dropout: float = 0.2
 
@@ -44,7 +43,7 @@ class DRCTripleNetConfig:
         return asdict(self)
 
 
-class DRCTripleNet(nn.Module):
+class DRCDualNet(nn.Module):
     """Configurable concat-fusion network for compensated I/Q and auxiliary features."""
 
     def __init__(
@@ -64,18 +63,18 @@ class DRCTripleNet(nn.Module):
         fusion_hidden_dim: int = 256,
         fusion_type: str = "mlp",
         use_iq_stream: bool = True,
-        use_hoc_stream: bool = True,
-        use_metadata: bool = True,
-        use_constellation_image: bool = True,
+        use_hoc_stream: bool = False,
+        use_metadata: bool = False,
+        use_constellation_image: bool = False,
         use_evm_features: bool = True,
         dropout: float = 0.2,
     ) -> None:
         super().__init__()
         self.use_iq_stream = bool(use_iq_stream)
-        self.use_hoc_stream = bool(use_hoc_stream)
+        if use_hoc_stream:
+            raise ValueError("DRCDualNet supports only I/Q and constellation streams.")
         if not (
             self.use_iq_stream
-            or self.use_hoc_stream
             or use_constellation_image
             or use_evm_features
         ):
@@ -103,16 +102,6 @@ class DRCTripleNet(nn.Module):
         else:
             raise ValueError("raw_stream_type must be 'cnn' or 'resnet'.")
 
-        self.hoc_stream = (
-            HOCStream(
-                hoc_dim=hoc_dim,
-                feature_dim=feature_dim,
-                hidden_dims=hoc_hidden_dims,
-                dropout=dropout,
-            )
-            if self.use_hoc_stream
-            else None
-        )
         self.use_constellation_image = bool(use_constellation_image)
         self.use_evm_features = bool(use_evm_features)
         if self.use_constellation_image and self.use_evm_features:
@@ -142,7 +131,6 @@ class DRCTripleNet(nn.Module):
 
         num_feature_streams = (
             int(self.use_iq_stream)
-            + int(self.use_hoc_stream)
             + int(self.use_constellation_image or self.use_evm_features)
         )
         fusion_in = num_feature_streams * feature_dim + (meta_dim if use_metadata else 0)
@@ -189,12 +177,6 @@ class DRCTripleNet(nn.Module):
             f_raw = self.raw_stream(iq)
             parts.append(f_raw)
             out["f_raw"] = f_raw
-        if self.hoc_stream is not None:
-            if hoc is None:
-                raise ValueError("hoc input is required when use_hoc_stream=True.")
-            f_hoc = self.hoc_stream(hoc)
-            parts.append(f_hoc)
-            out["f_hoc"] = f_hoc
         if self.constellation_stream is not None:
             if self.use_constellation_image and constellation is None:
                 raise ValueError("constellation input is required when use_constellation_image=True.")
@@ -235,9 +217,9 @@ class DRCTripleNet(nn.Module):
         return logits
 
 
-def build_drc_triplenet(config: DRCTripleNetConfig | dict[str, Any]) -> DRCTripleNet:
-    if isinstance(config, DRCTripleNetConfig):
+def build_drc_dualnet(config: DRCDualNetConfig | dict[str, Any]) -> DRCDualNet:
+    if isinstance(config, DRCDualNetConfig):
         kwargs = config.to_dict()
     else:
         kwargs = dict(config)
-    return DRCTripleNet(**kwargs)
+    return DRCDualNet(**kwargs)

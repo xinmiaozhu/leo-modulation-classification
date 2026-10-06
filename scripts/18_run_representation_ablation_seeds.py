@@ -44,8 +44,8 @@ PROTOCOLS = {
     },
 }
 METHODS = {
-    "iq_only": "configs/model/triplenet_iq_only.yaml",
-    "constellation_only": "configs/model/triplenet_evm_only.yaml",
+    "iq_only": "configs/model/dualnet_iq_only.yaml",
+    "constellation_only": "configs/model/dualnet_evm_only.yaml",
 }
 DISPLAY = {
     "iq_only": "I/Q only",
@@ -199,7 +199,7 @@ def main() -> None:
                         "--feature-data", cfg["train_feature"],
                         "--symbol-feature-data", cfg["train_symbol"],
                         "--splits", cfg["train_splits"],
-                        "--model", "drc_triplenet",
+                        "--model", "drc_dualnet",
                         "--model-config", METHODS[method],
                         "--train-config", "configs/train/train_long.yaml",
                         "--output-dir", str(checkpoint_dir.relative_to(ROOT)),
@@ -229,7 +229,7 @@ def main() -> None:
                             "--symbol-feature-data", cfg["eval_symbol"],
                             "--splits", cfg["eval_splits"],
                             "--split", "test",
-                            "--model", "drc_triplenet",
+                            "--model", "drc_dualnet",
                             "--model-config", METHODS[method],
                             "--output", str(output.relative_to(ROOT)),
                             "--summary-output", str(eval_summary.relative_to(ROOT)),

@@ -91,6 +91,8 @@ def run_step(name, script, arguments, out, threads):
 
 
 def generation_split_arguments(config, condition):
+    if config.get("evaluation_only", False):
+        return ["--test-only", "--samples-per-mod-snr", config["test_per_class_snr"]]
     if config.get("evaluation_only_nontraining_conditions", False) and condition not in config["training_conditions"]:
         return ["--test-only", "--samples-per-mod-snr", config["test_per_class_snr"]]
     return ["--train-samples-per-mod-snr", config["train_per_class_snr"],
@@ -128,15 +130,16 @@ def prepare(config, out, device):
             "--pilot-weighting", "coherent", "--device", device, "--no-progress", "--overwrite",
         ], out, config["threads"])
         iq = folder / "unequalized.h5"
-        run_step(f"{name}_comp", "09_precompute_external_mu_hoc.py", [
+        run_step(f"{name}_comp", "08_precompute_external_mu_hoc.py", [
             "--raw-data", raw, "--mu-feature-data", pilot, "--fd0-key", "pilot_fd0_hat",
             "--output", iq, "--save-iq-comp", "--skip-hoc", "--skip-v-hoc", "--no-progress", "--overwrite",
+            "--compensate-fd0",
         ], out, config["threads"])
         # Same assumed support for every realizable equalizer, fixed before testing.
-        for mode in ("unequalized", "pilot_ls", "oracle_operator"):
+        for mode in config.get("receiver_modes", ("unequalized", "pilot_ls", "oracle_operator")):
             feature = folder / f"{mode}.h5"
             if mode != "unequalized":
-                run_step(f"{name}_{mode}", "12_equalize_multipath_frames.py", [
+                run_step(f"{name}_{mode}", "09_equalize_multipath_frames.py", [
                     "--raw-data", raw, "--compensated-features", iq, "--output", feature,
                     "--mode", mode, "--channel-length", 25, "--overwrite",
                 ], out, config["threads"])
@@ -150,7 +153,7 @@ def prepare(config, out, device):
 def model_arguments(folder, raw, splits, mode):
     return ["--raw-data", raw, "--feature-data", folder / f"{mode}.h5",
             "--symbol-feature-data", folder / f"{mode}_symbol.h5", "--splits", splits,
-            "--model", "drc_triplenet", "--model-config", ROOT / "configs/model/triplenet_iq_evm.yaml",
+            "--model", "drc_dualnet", "--model-config", ROOT / "configs/model/dualnet_iq_evm.yaml",
             "--iq-source", "comp", "--iq-representation", "iq", "--iq-normalize", "zscore",
             "--num-workers", 0]
 
@@ -376,7 +379,7 @@ def main():
     if manifest.exists() and json.loads(manifest.read_text())["config"] != config:
         raise ValueError("Use a new output directory for changed experimental settings.")
     if not manifest.exists():
-        files = [*ROOT.glob("src/**/*.py"), *ROOT.glob("scripts/*.py"), ROOT / "configs/model/triplenet_iq_evm.yaml",
+        files = [*ROOT.glob("src/**/*.py"), *ROOT.glob("scripts/*.py"), ROOT / "configs/model/dualnet_iq_evm.yaml",
                  ROOT / "configs/train/train_default.yaml"]
         manifest.write_text(json.dumps({"config": config, "device": args.device,
             "source_sha256": {str(p.relative_to(ROOT)): digest(p) for p in files},

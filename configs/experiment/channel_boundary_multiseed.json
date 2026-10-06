@@ -26,12 +26,18 @@
   "profiles": {
     "flat": {
       "delays": [
+        0,
+        0,
         0
       ],
       "gains_db": [
-        0
+        0,
+        -6,
+        -10
       ],
       "doppler_hz": [
+        0,
+        0,
         0
       ]
     },

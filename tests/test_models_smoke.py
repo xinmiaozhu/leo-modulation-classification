@@ -7,7 +7,7 @@ import importlib.util
 import pytest
 import torch
 
-from src.models.drc_triplenet import DRCTripleNet
+from src.models.drc_dualnet import DRCDualNet
 from src.models.losses import DRCTrainingLoss
 from src.models.paper_baselines import PAPER_BASELINE_MODELS, build_paper_baseline
 
@@ -34,17 +34,13 @@ def test_paper_baselines_forward():
     ("use_iq", "use_hoc", "use_evm"),
     [
         (True, False, False),
-        (False, True, False),
         (False, False, True),
-        (True, True, False),
         (True, False, True),
-        (False, True, True),
-        (True, True, True),
     ],
 )
-def test_drc_triplenet_input_combinations(use_iq, use_hoc, use_evm):
+def test_drc_dualnet_input_combinations(use_iq, use_hoc, use_evm):
     batch, num_samples, hoc_dim, evm_dim, num_classes = 2, 128, 21, 48, 7
-    model = DRCTripleNet(
+    model = DRCDualNet(
         hoc_dim=hoc_dim,
         evm_dim=evm_dim,
         num_classes=num_classes,
@@ -80,7 +76,7 @@ def test_retained_model_configs_train_eval_compatible(config_path):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         modules.append(module)
-    model_name = config_path.stem if config_path.stem.startswith("paper_") else "drc_triplenet"
+    model_name = config_path.stem if config_path.stem.startswith("paper_") else "drc_dualnet"
     args = argparse.Namespace(model=model_name, model_config=str(config_path))
     hoc_dim = 10 if model_name == "paper_nasa_hoc_nn" else 21
     trained = modules[0].build_model(args, num_classes=7, hoc_dim=hoc_dim, evm_dim=48).eval()
@@ -88,7 +84,7 @@ def test_retained_model_configs_train_eval_compatible(config_path):
     evaluated.load_state_dict(trained.state_dict(), strict=True)
     with torch.inference_mode():
         inputs = (torch.randn(2, 2, 1024), torch.randn(2, hoc_dim))
-        kwargs = {"evm_features": torch.randn(2, 48)} if model_name == "drc_triplenet" else {}
+        kwargs = {"evm_features": torch.randn(2, 48)} if model_name == "drc_dualnet" else {}
         expected = trained(*inputs, **kwargs)
         actual = evaluated(*inputs, **kwargs)
     assert actual.shape == (2, 7)
@@ -96,7 +92,7 @@ def test_retained_model_configs_train_eval_compatible(config_path):
 
 
 def test_paper_receiver_loss_backward():
-    model = DRCTripleNet(
+    model = DRCDualNet(
         hoc_dim=21, evm_dim=48, num_classes=7, feature_dim=16,
         use_hoc_stream=False, use_metadata=False, use_constellation_image=False,
     )

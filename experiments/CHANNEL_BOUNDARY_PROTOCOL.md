@@ -1,15 +1,17 @@
 # 三组信道边界对照
 
-入口：`scripts/51_run_channel_boundary.py`。该实验沿用 Protocol A 的
+入口：`scripts/22_run_channel_boundary.py`。该实验沿用 Protocol A 的
 coherent-grid 导频载波估计、补偿 I/Q、exact-mixture 描述符和
-`triplenet_iq_evm.yaml` 分类网络，不修改已有论文实验或 checkpoint。
+`dualnet_iq_evm.yaml` 分类网络，不修改已有论文实验或 checkpoint。
 
 ## 第一组：频率选择性强度
 
 比较 flat、short、reference、long、strong_echo。前三种多径时延谱为
 `[0,1,2]`、`[0,3,7]`、`[0,8,24]` 个采样点，功率谱为 `[0,-6,-10]` dB；
 strong_echo 固定 reference 时延，改为 `[0,-1,-3]` dB。
-flat 是单位模、随机常相位的单抽头对照。每个谱按总路径功率归一化。
+flat 是三条零时延路径 `[0,0,0]` 的相干叠加，相对功率为 `[0,-6,-10]` dB；
+与 reference 配对使用同一组路径随机相位。每个谱按平均总路径功率归一化，
+不逐帧归一化合成抽头幅度。
 既报告采样时延，也报告 RMS 时延 / 符号周期，不能把采样点当符号数。
 
 每种信道比较不均衡、静态 Pilot-LS 均衡和 Oracle 算子均衡。
@@ -72,7 +74,7 @@ Oracle 使用同一正则化强度和真实路径参数。所有配置在观察�
 在仓库根目录执行：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/51_run_channel_boundary.py
+.\.venv\Scripts\python.exe scripts/22_run_channel_boundary.py
 ```
 
 默认 screening：SNR=-4/5/14 dB，每类每 SNR 为 train=8、val=4、test=10；
@@ -84,7 +86,7 @@ Oracle 使用同一正则化强度和真实路径参数。所有配置在观察�
 可扩大样本量与种子数执行完整实验：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/51_run_channel_boundary.py `
+.\.venv\Scripts\python.exe scripts/22_run_channel_boundary.py `
   --config configs/experiment/channel_boundary_full.json `
   --output-dir outputs/channel_boundary_full --device cpu
 ```
@@ -105,7 +107,7 @@ Oracle 使用同一正则化强度和真实路径参数。所有配置在观察�
 独立存储模型和预测，只读复用已生成的信道和表征：
 
 ```powershell
-.\.venv-cuda\Scripts\python.exe scripts/51_run_channel_boundary.py `
+.\.venv-cuda\Scripts\python.exe scripts/22_run_channel_boundary.py `
   --config configs/experiment/channel_boundary_multiseed.json `
   --output-dir outputs/channel_boundary_multiseed --device cuda `
   --reuse-prepared-from outputs/channel_boundary_screen --stages train eval summary
@@ -119,7 +121,7 @@ Oracle 使用同一正则化强度和真实路径参数。所有配置在观察�
 Windows 上可启动带持久日志的隐藏进程：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/52_start_channel_boundary_full.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/23_start_channel_boundary_full.ps1
 Get-Content outputs\channel_boundary_full\run_progress.json
 Get-Content outputs\channel_boundary_full\runner.stdout.log -Tail 10
 ```
@@ -137,7 +139,7 @@ Get-Content outputs\channel_boundary_full\runner.stdout.log -Tail 10
 只读已有分类结果绘图，不重新运行实验：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/53_plot_channel_boundary_paper.py
+.\.venv\Scripts\python.exe scripts/51_plot_channel_boundary_paper.py
 ```
 
 输出为 `outputs/figures/paper/channel_boundary_representative_accuracy_vs_snr.pdf`，
@@ -163,3 +165,37 @@ carrier-compensated I/Q–constellation classifier without channel equalization
 and are averaged over five model seeds. Static and Long denote reference and
 unseen long-delay multipath; Slow and Fast denote slow and fast time-varying
 multipath, respectively.
+
+
+## Updated single-figure run (2026-10-05)
+
+Run `.venv-cuda/Scripts/python.exe -u scripts/24_run_channel_boundary_figure.py`.
+Configuration: `configs/experiment/channel_boundary_figure.json`.
+The run retains 5 model seeds, 11 SNR points, 200/100/100 train/validation/test
+frames per class and SNR, and the original 100-epoch budget with early stopping.
+Only the five channels and seven unequalized neural curves needed by the paper
+figure are computed. Three coincident paths with powers [0,-6,-10] dB form Flat;
+Static uses the same paired path coefficients at delays [0,3,7]. Noise remains
+scaled to each frame's received power. CFO compensation is explicitly enabled.
+Dense channel metadata stores coincident paths as one effective delay to prevent
+double counting in downstream operators.
+
+Artifacts and resumable completion markers are isolated in
+`outputs/channel_boundary_flat_multipath`. After all 35 evaluations pass pairing
+and completeness checks, the runner backs up the old figure and replaces its
+PDF, PNG, CSV and JSON under `outputs/figures/paper`. A failed or incomplete run
+does not replace the existing paper figure.
+
+
+## Expanded test-only evaluation (2026-10-06)
+
+Launch with `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/25_start_channel_boundary_figure.ps1 -ExpandedTest`.
+The configuration `channel_boundary_figure_test1000.json` increases test frames
+from 100 to 1000 per class/SNR (7000 per SNR; 77000 per channel).
+All 15 completed checkpoints from `outputs/channel_boundary_flat_multipath` are
+reused, with checkpoint hashes recorded; no training or validation data change.
+The original test repetitions 0..99 are retained; repetitions 100..999 are new
+independent draws. Pairing across channels and independent draws across SNR
+remain unchanged. Each test key and class/SNR count is checked before evaluation.
+Expanded artifacts live under `outputs/channel_boundary_flat_multipath_test1000`.
+The original figure is backed up and replaced only after all evaluations succeed.
