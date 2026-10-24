@@ -18,7 +18,7 @@ def test_paper_baselines_forward():
     hoc = torch.randn(B, hoc_dim)
 
     for model_name in PAPER_BASELINE_MODELS:
-        model_hoc_dim = 10 if model_name == "paper_nasa_hoc_nn" else hoc_dim
+        model_hoc_dim = hoc_dim
         model = build_paper_baseline(
             model_name,
             num_classes=num_classes,
@@ -36,6 +36,8 @@ def test_paper_baselines_forward():
         (True, False, False),
         (False, False, True),
         (True, False, True),
+        (True, True, True),
+        (True, True, False),
     ],
 )
 def test_drc_dualnet_input_combinations(use_iq, use_hoc, use_evm):
@@ -65,20 +67,89 @@ def test_drc_dualnet_input_combinations(use_iq, use_hoc, use_evm):
 
     assert logits.shape == (batch, num_classes)
     assert aux["f_out"].shape == (batch, 16)
+    if use_hoc:
+        logits.square().mean().backward()
+        assert aux["f_hoc"].shape == (batch, 16)
+        assert all(p.grad is not None and torch.isfinite(p.grad).all()
+                   for p in model.hoc_stream.parameters())
+        with pytest.raises(ValueError, match="hoc input is required"):
+            model(iq, None, evm_features=evm)
+
+
+def test_hoc_ablation_checkpoint_restores_branch_and_uses_hoc():
+    root = Path(__file__).resolve().parents[1]
+    modules = []
+    for name in ("12_train_model", "13_evaluate_model"):
+        spec = importlib.util.spec_from_file_location(name, root / "scripts" / (name + ".py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
+    args = argparse.Namespace(model="drc_dualnet", model_config=None, use_hoc_stream=True)
+    config = modules[0]._load_model_config(args)
+    trained = modules[0].build_model(args, num_classes=7, hoc_dim=21, evm_dim=48).eval()
+    checkpoint_config = {"model_config": config.copy()}
+    evaluated = modules[1].build_model(args, num_classes=7, hoc_dim=21, evm_dim=48,
+                                     checkpoint_config=checkpoint_config).eval()
+    evaluated.load_state_dict(trained.state_dict(), strict=True)
+    assert checkpoint_config["model_config"] == config
+    assert modules[1]._model_branch_inputs(args, checkpoint_config) == (True, True)
+    iq, hoc, evm = torch.randn(2, 2, 128), torch.randn(2, 21), torch.randn(2, 48)
+    with torch.no_grad():
+        expected = trained(iq, hoc, evm_features=evm)
+        actual = evaluated(iq, hoc, evm_features=evm)
+        changed = evaluated(iq, hoc + 10, evm_features=evm)
+    torch.testing.assert_close(actual, expected)
+    assert not torch.allclose(actual, changed)
+
+
+def test_iq_hoc_control_matches_descriptor_encoder_and_ignores_descriptor():
+    root = Path(__file__).resolve().parents[1]
+    modules = []
+    for name in ("12_train_model", "13_evaluate_model"):
+        spec = importlib.util.spec_from_file_location(name, root / "scripts" / (name + ".py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
+    args = argparse.Namespace(model="drc_dualnet",
+                              model_config=str(root / "configs/model/dualnet_iq_only.yaml"),
+                              use_hoc_stream=True, hoc_hidden_dims=[64, 64])
+    config = modules[0]._load_model_config(args)
+    trained = modules[0].build_model(args, num_classes=7, hoc_dim=21, evm_dim=48).eval()
+    assert trained.constellation_stream is None
+    assert modules[0]._model_input_flags(args) == (False, False, False)
+    assert modules[0]._model_branch_inputs(args) == (True, True)
+    eval_args = argparse.Namespace(model="drc_dualnet", model_config=None)
+    checkpoint_config = {"model_config": config}
+    restored = modules[1].build_model(eval_args, num_classes=7, hoc_dim=21, evm_dim=48,
+                                     checkpoint_config=checkpoint_config).eval()
+    restored.load_state_dict(trained.state_dict(), strict=True)
+    assert modules[1]._model_input_flags(eval_args, checkpoint_config) == (False, False, False)
+    descriptor_args = argparse.Namespace(model="drc_dualnet", model_config=None)
+    fusion = modules[0].build_model(descriptor_args, num_classes=7, hoc_dim=21, evm_dim=48).eval()
+    hoc_linears = [m for m in trained.hoc_stream.modules() if isinstance(m, torch.nn.Linear)]
+    descriptor_linears = [m for m in fusion.constellation_stream.modules() if isinstance(m, torch.nn.Linear)]
+    assert [m.out_features for m in hoc_linears] == [m.out_features for m in descriptor_linears] == [64, 64, 128]
+    assert trained.fusion[0].in_features == fusion.fusion[0].in_features == 256
+    iq, hoc = torch.randn(2, 2, 128), torch.randn(2, 21)
+    with torch.no_grad():
+        expected = trained(iq, hoc)
+        torch.testing.assert_close(restored(iq, hoc), expected)
+        torch.testing.assert_close(trained(iq, hoc, evm_features=torch.randn(2, 48) * 100), expected)
+        assert not torch.allclose(trained(iq, hoc + 10), expected)
 
 
 @pytest.mark.parametrize("config_path", sorted((Path(__file__).resolve().parents[1] / "configs/model").glob("*.yaml")), ids=lambda p: p.stem)
 def test_retained_model_configs_train_eval_compatible(config_path):
     root = Path(__file__).resolve().parents[1]
     modules = []
-    for name in ("13_train_model", "14_evaluate_model"):
+    for name in ("12_train_model", "13_evaluate_model"):
         spec = importlib.util.spec_from_file_location(name, root / "scripts" / (name + ".py"))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         modules.append(module)
     model_name = config_path.stem if config_path.stem.startswith("paper_") else "drc_dualnet"
     args = argparse.Namespace(model=model_name, model_config=str(config_path))
-    hoc_dim = 10 if model_name == "paper_nasa_hoc_nn" else 21
+    hoc_dim = 21
     trained = modules[0].build_model(args, num_classes=7, hoc_dim=hoc_dim, evm_dim=48).eval()
     evaluated = modules[1].build_model(args, num_classes=7, hoc_dim=hoc_dim, evm_dim=48).eval()
     evaluated.load_state_dict(trained.state_dict(), strict=True)

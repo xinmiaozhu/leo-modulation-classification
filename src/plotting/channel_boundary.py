@@ -127,7 +127,7 @@ def plot_channel_boundary(neural: pd.DataFrame, output: str | Path, *, dpi: int 
         "export_page_points": [210.088, 184.58284],
         "font": "Times New Roman", "axis_label_pt": 10.,
         "x_tick_pt": 8.1, "y_tick_pt": 9., "legend_pt": 8.5,
-        "style_reference": "paper_baseline_protocol_a_seed41_accuracy_vs_snr.pdf",
+        "style_reference": "paper_baseline_protocol_a_accuracy_vs_snr.pdf",
         "display": "Seven representative curves; seed standard deviations retained in CSV, not drawn as bands",
     }
     output.with_suffix(".json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")

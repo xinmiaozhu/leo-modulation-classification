@@ -173,3 +173,54 @@ class DirectFRFT:
 
 def frft_search_peak(x: np.ndarray, alpha_grid: np.ndarray, sharpness_mode: str = "peak_minus_local") -> dict:
     return DirectFRFT(sharpness_mode=sharpness_mode).search_peak(x, alpha_grid)
+
+
+def rate_to_frft_angle(mu, num_pilots: int, pilot_interval_s: float):
+    """Physical calibration for x_n=(n-(N-1)/2)/sqrt(N); order a=2*alpha/pi.
+
+    At focus cot(alpha)=-mu*N*dt**2. dt is the observed PILOT interval,
+    not the waveform sample period. This is independent of empirical fitting.
+    """
+    if num_pilots < 2 or pilot_interval_s <= 0:
+        raise ValueError("Positive pilot spacing and at least two pilots required")
+    return np.arctan2(1.0, -np.asarray(mu) * num_pilots * pilot_interval_s**2)
+
+
+class SampledFrFTPlan:
+    """CZT evaluation of the sampled continuous FrFT integral, not DCFT.
+
+    Kernel: sqrt(1-i*cot(alpha))*exp(i*pi*((x²+u²)*cot(alpha)
+            -2*x*u*csc(alpha))), quadrature dx=1/sqrt(N).
+    The fractional output grid and output chirp are retained. This is a
+    sampled-kernel approximation, NOT the eigenvector discrete FrFT, nor a
+    claim to reproduce Luo et al.'s NLS/alternate-search implementation.
+    """
+
+    def __init__(self, n: int, alpha: float, output_size: int):
+        from scipy.signal import CZT
+        if n < 2 or output_size < n or not 0 < alpha < np.pi:
+            raise ValueError("Require N>=2, M>=N and 0<alpha<pi")
+        self.n, self.alpha = n, float(alpha)
+        self.x = (np.arange(n) - (n - 1) / 2) / np.sqrt(n)
+        self.u = (np.arange(output_size) - output_size / 2) * np.sqrt(n) / output_size
+        cot = 1 / np.tan(alpha)
+        sine = np.sin(alpha)
+        self.input_chirp = np.exp(1j * np.pi * self.x**2 * cot)
+        self.output_chirp = (np.sqrt(1 - 1j * cot) / np.sqrt(n)
+                             * np.exp(1j * np.pi * self.u**2 * cot)
+                             * np.exp(2j * np.pi * (n - 1) / 2 * self.u / (np.sqrt(n) * sine)))
+        self.czt = CZT(n, m=output_size, w=np.exp(-2j * np.pi / (output_size * sine)),
+                       a=np.exp(-1j * np.pi / sine))
+
+    def transform(self, z):
+        z = np.asarray(z, dtype=np.complex128)
+        if z.shape != (self.n,):
+            raise ValueError("Pilot vector length disagrees with FrFT plan")
+        return self.output_chirp * self.czt(z * self.input_chirp)
+
+    def direct_reference(self, z):
+        """Independent dense quadrature, for kernel parity tests only."""
+        cot = 1 / np.tan(self.alpha)
+        phase = np.pi * ((self.u[:, None]**2 + self.x[None, :]**2) * cot
+                        - 2 * self.u[:, None] * self.x[None, :] / np.sin(self.alpha))
+        return np.sqrt(1 - 1j * cot) / np.sqrt(self.n) * (np.exp(1j * phase) @ z)

@@ -10,6 +10,7 @@ dataset such as ``pilot_mu_hat`` or ``mu_hat_joint``.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from math import factorial
 from pathlib import Path
@@ -123,7 +124,9 @@ def compute_V_hoc_fast(
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Precompute HOC features after external-mu compensation.")
     p.add_argument("--raw-data", type=str, required=True)
-    p.add_argument("--mu-feature-data", type=str, required=True)
+    p.add_argument("--mu-feature-data", type=str, default=None)
+    p.add_argument("--input-iq-feature-data", type=str, default=None,
+                   help="Compute real HOC from frozen iq_comp, linking the unchanged input datasets.")
     p.add_argument("--output", type=str, required=True)
     p.add_argument("--config", type=str, default=None)
     p.add_argument("--mu-key", type=str, default="pilot_mu_hat")
@@ -162,6 +165,66 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-progress", action="store_true")
     p.add_argument("--overwrite", action="store_true")
     return p.parse_args()
+
+
+def prepare_frozen_iq_hoc(source_path: Path, raw_path: Path, output_path: Path,
+                          *, overwrite: bool = False, progress: bool = True) -> None:
+    """Add 21 real HOC features without recomputing the frozen front end.
+
+    All other datasets are relative external links to the original feature
+    file, so the ablation consumes exactly the original compensated I/Q.
+    Incomplete files are never accepted as reusable features.
+    """
+    source_path, raw_path, output_path = map(Path, (source_path, raw_path, output_path))
+    if output_path.resolve() in {source_path.resolve(), raw_path.resolve()}:
+        raise ValueError("HOC output must not overwrite a frozen input.")
+    stat = source_path.stat()
+    if output_path.exists() and not overwrite:
+        with h5py.File(output_path, "r") as existing:
+            if (bool(existing.attrs.get("hoc_complete", False))
+                    and existing.attrs.get("hoc_source_size") == stat.st_size
+                    and existing.attrs.get("hoc_source_mtime_ns") == stat.st_mtime_ns
+                    and Path(str(existing.attrs.get("hoc_source", ""))).resolve() == source_path.resolve()):
+                return
+        raise ValueError(f"Incomplete or stale HOC features: {output_path}; use --overwrite.")
+    orders = ((2, 0), (2, 1), (4, 0), (4, 1), (4, 2), (6, 0), (6, 3))
+    names = hoc_feature_names(orders, "real_imag_abs")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_suffix(output_path.suffix + ".partial")
+    with h5py.File(source_path, "r") as source, h5py.File(raw_path, "r") as raw:
+        if source["iq_comp"].shape != raw["iq"].shape:
+            raise ValueError("Frozen compensated I/Q and raw data shapes differ.")
+        for key in ("label", "snr_db"):
+            if not np.array_equal(source[key][:], raw[key][:]):
+                raise ValueError(f"Frozen input alignment mismatch: {key}")
+        n = len(source["iq_comp"])
+        with h5py.File(temporary, "w") as out:
+            for key, value in source.attrs.items():
+                out.attrs[key] = value
+            link = os.path.relpath(source_path.resolve(), output_path.parent.resolve()).replace("\\", "/")
+            for key in source:
+                if key not in {"h_drc", "feature_names"}:
+                    out[key] = h5py.ExternalLink(link, "/" + key)
+            out.create_dataset("feature_names", data=np.asarray(names, dtype="S64"))
+            hoc = out.create_dataset("h_drc", (n, len(names)), dtype="float32")
+            out.attrs["hoc_complete"] = False
+            out.attrs["hoc_source"] = str(source_path.resolve())
+            out.attrs["hoc_source_size"] = stat.st_size
+            out.attrs["hoc_source_mtime_ns"] = stat.st_mtime_ns
+            out.attrs["hoc_definition"] = "centered unit-power C20,C21,C40,C41,C42,C60,C63; real,imag,abs"
+            for start in tqdm(range(0, n, 128), disable=not progress, desc="Frozen-I/Q HOC"):
+                batch = source["iq_comp"][start:start + 128]
+                values = np.stack([extract_hoc_features_fast(
+                    to_complex(iq), orders, "real_imag_abs") for iq in batch])
+                if not np.isfinite(values).all():
+                    raise ValueError(f"Nonfinite HOC at rows {start}:{start + len(batch)}")
+                hoc[start:start + len(batch)] = values
+            out.attrs["hoc_complete"] = True
+    temporary.replace(output_path)
+    save_json({"source": str(source_path), "raw_data": str(raw_path),
+               "output": str(output_path), "num_samples": n, "hoc_dim": len(names),
+               "feature_names": names, "iq_comp": "unchanged external link", "complete": True},
+              output_path.with_suffix(".summary.json"))
 
 
 def build_config(args: argparse.Namespace, raw_h5_path: str) -> DRCHOCConfig:
@@ -318,6 +381,15 @@ def _write_cuda_iq_only_batches(
 
 def main() -> None:
     args = parse_args()
+    if args.input_iq_feature_data:
+        if args.skip_hoc or args.mu_feature_data:
+            raise SystemExit("Frozen-I/Q HOC mode cannot be combined with --skip-hoc or --mu-feature-data.")
+        prepare_frozen_iq_hoc(Path(args.input_iq_feature_data), Path(args.raw_data),
+                              Path(args.output), overwrite=args.overwrite,
+                              progress=not args.no_progress)
+        return
+    if not args.mu_feature_data:
+        raise SystemExit("Supply --mu-feature-data or --input-iq-feature-data.")
     output = Path(args.output)
     if output.exists() and not args.overwrite:
         raise SystemExit(f"Output already exists: {output}. Use --overwrite to replace it.")

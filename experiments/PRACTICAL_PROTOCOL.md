@@ -4,7 +4,7 @@ The current paper includes the joint-impairment protocol below. Its receiver
 uses DCFT-based chirp-focus acquisition with coherent local refinement.
 The `hybrid_dfrft` estimator option and historical script names are retained
 for compatibility; the training and evaluation runner is
-[`scripts/17_run_hybrid_dfrft_seeds.py`](../scripts/17_run_hybrid_dfrft_seeds.py).
+[`scripts/16_run_hybrid_dfrft_seeds.py`](../scripts/16_run_hybrid_dfrft_seeds.py).
 
 ## Joint-impairment split
 

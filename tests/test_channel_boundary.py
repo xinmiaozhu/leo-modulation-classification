@@ -81,7 +81,7 @@ def test_runner_invalidates_cache_for_upstream_changes_and_missing_output(tmp_pa
     from pathlib import Path
     from types import SimpleNamespace
 
-    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/22_run_channel_boundary.py"))
+    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/21_run_channel_boundary.py"))
     run = runner["run_step"]
     monkeypatch.setitem(run.__globals__, "ROOT", tmp_path)
     (tmp_path / "scripts").mkdir()
@@ -117,12 +117,12 @@ def test_training_resume_uses_only_matching_pending_run(tmp_path, monkeypatch):
     from pathlib import Path
     from types import SimpleNamespace
 
-    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/22_run_channel_boundary.py"))
+    runner = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/21_run_channel_boundary.py"))
     run = runner["run_step"]
     monkeypatch.setitem(run.__globals__, "ROOT", tmp_path)
     for folder in ("scripts", "src", "logs", "checkpoint"):
         (tmp_path / folder).mkdir()
-    (tmp_path / "scripts/13_train_model.py").write_text("# training stub")
+    (tmp_path / "scripts/12_train_model.py").write_text("# training stub")
     checkpoint = tmp_path / "checkpoint"
     calls = []
 
@@ -138,8 +138,8 @@ def test_training_resume_uses_only_matching_pending_run(tmp_path, monkeypatch):
     monkeypatch.setattr(run.__globals__["subprocess"], "run", execute)
     arguments = ["--output-dir", checkpoint]
     with pytest.raises(RuntimeError):
-        run("train", "13_train_model.py", arguments, tmp_path, 1)
-    run("train", "13_train_model.py", arguments, tmp_path, 1)
+        run("train", "12_train_model.py", arguments, tmp_path, 1)
+    run("train", "12_train_model.py", arguments, tmp_path, 1)
     assert "--resume" not in calls[0] and "--resume" in calls[1]
     assert json.loads((tmp_path / "run_progress.json").read_text())["state"] == "step_completed"
 
@@ -152,7 +152,7 @@ def test_evaluation_only_generation_preserves_paired_test_samples(tmp_path):
     import h5py
 
     root = Path(__file__).resolve().parents[1]
-    runner = runpy.run_path(str(root / "scripts/22_run_channel_boundary.py"))
+    runner = runpy.run_path(str(root / "scripts/21_run_channel_boundary.py"))
     config = {"evaluation_only_nontraining_conditions": True, "training_conditions": ["flat"],
               "train_per_class_snr": 1, "val_per_class_snr": 1, "test_per_class_snr": 2}
     for condition in ("flat", "short"):

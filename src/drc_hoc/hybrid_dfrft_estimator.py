@@ -27,6 +27,7 @@ class HybridDFRFTConfig:
     fine_fd0_radius_hz: float = 30.0
     fine_fd0_step_hz: float = 1.0
     peak_exclude_bins: int = 2
+    unwrap_centered_cfo: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -103,7 +104,14 @@ class HybridDFRFTPilotEstimator:
             lower = float(self.pilot_config.fd0_min_hz) + float(mu) * center
             upper = float(self.pilot_config.fd0_max_hz) + float(mu) * center
             lo, hi = min(lower, upper), max(lower, upper)
-            valid_bins = np.flatnonzero((frequency >= lo) & (frequency <= hi))
+            if self.hybrid_config.unwrap_centered_cfo:
+                period = 1.0 / dt
+                if hi - lo >= period:
+                    raise ValueError("CFO search width must be below the comb-pilot sampling rate.")
+                lifted = lo + np.remainder(frequency - lo, period)
+                valid_bins = np.flatnonzero(lifted <= hi)
+            else:
+                valid_bins = np.flatnonzero((frequency >= lo) & (frequency <= hi))
             if valid_bins.size == 0:
                 continue
             local_index = int(valid_bins[np.argmax(power[mu_index, valid_bins])])
@@ -129,6 +137,9 @@ class HybridDFRFTPilotEstimator:
         )
         coarse_mu = float(mu_grid[best_mu_index])
         centered_cfo = float(frequency[best_frequency_index])
+        if self.hybrid_config.unwrap_centered_cfo:
+            lower = float(self.pilot_config.fd0_min_hz) + coarse_mu * center
+            centered_cfo = lower + float(np.remainder(centered_cfo - lower, 1.0 / dt))
         frame_start_cfo = centered_cfo - coarse_mu * center
         return (
             coarse_mu,
@@ -217,3 +228,63 @@ class HybridDFRFTPilotEstimator:
             float(bin_spacing),
             int(num_mu),
         )
+
+
+@dataclass
+class FrFTCaptureConfig:
+    angle_count: int = 65
+    output_size: int = 1024
+
+
+class FrFTPilotEstimator(HybridDFRFTPilotEstimator):
+    """Physically bounded FrFT angle search with the unchanged local refiner.
+
+    Motivated by Luo et al., IEEE Access 2019, DOI 10.1109/ACCESS.2019.2903185.
+    Adaptation: known AMC comb pilots replace GNSS correlations; angle sampling
+    is validation-selected, and the project's common coherent refiner replaces
+    the paper's NLS/alternate-search extension. Not an exact paper reproduction.
+    """
+
+    def __init__(self, pilot_config, hybrid_config=None, frft_config=None):
+        super().__init__(pilot_config, hybrid_config)
+        self.frft_config = frft_config or FrFTCaptureConfig()
+        if self.frft_config.angle_count < 2:
+            raise ValueError("At least two FrFT angles required")
+        self._plans = {}
+
+    def _chirp_focus(self, z, t):
+        from .frft import SampledFrFTPlan, rate_to_frft_angle
+        z, t = np.asarray(z), np.asarray(t, dtype=float)
+        if len(z) < self.pilot_config.min_pilots or t.shape != z.shape:
+            raise ValueError("Insufficient or inconsistent pilot observations")
+        dt = float(np.median(np.diff(t)))
+        if dt <= 0 or not np.allclose(np.diff(t), dt, rtol=1e-6, atol=1e-12):
+            raise ValueError("FrFT capture requires uniformly spaced pilots")
+        n, center = len(z), float(np.mean(t))
+        key = (n, round(dt, 14))
+        if key not in self._plans:
+            bounds = rate_to_frft_angle([self.pilot_config.mu_min, self.pilot_config.mu_max], n, dt)
+            angles = np.linspace(bounds[0], bounds[1], self.frft_config.angle_count)
+            self._plans[key] = [(a, SampledFrFTPlan(n, float(a), self.frft_config.output_size)) for a in angles]
+        candidates = []
+        for alpha, plan in self._plans[key]:
+            mu = float(-1 / np.tan(alpha) / (n * dt**2))
+            # Floating-point endpoint rounding must not escape physical bounds.
+            mu = float(np.clip(mu, self.pilot_config.mu_min, self.pilot_config.mu_max))
+            frequency = plan.u / (np.sin(alpha) * np.sqrt(n) * dt)
+            fd0 = frequency - mu * center
+            valid = np.flatnonzero((fd0 >= self.pilot_config.fd0_min_hz) & (fd0 <= self.pilot_config.fd0_max_hz))
+            if not valid.size:
+                continue
+            spectrum = plan.transform(z)
+            # Remove the kernel's angle-dependent amplitude scale for fair peaks.
+            power = np.abs(spectrum)**2 * abs(np.sin(alpha)) / n
+            k = int(valid[np.argmax(power[valid])])
+            candidates.append((float(power[k]), mu, float(frequency[k]), float(fd0[k]),
+                               float(abs(frequency[1] - frequency[0]))))
+        if not candidates:
+            raise ValueError("FrFT output grid does not intersect the physical CFO range")
+        candidates.sort(reverse=True)
+        score, mu, fc, fd0, df = candidates[0]
+        margin = (score - candidates[1][0]) / (abs(candidates[1][0]) + 1e-12) if len(candidates) > 1 else np.inf
+        return mu, fc, fd0, score, margin, df, len(self._plans[key])

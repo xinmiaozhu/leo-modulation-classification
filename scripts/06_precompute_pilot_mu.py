@@ -92,6 +92,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dfrft-fine-mu-step", type=float, default=5.0)
     p.add_argument("--dfrft-fine-fd0-radius", type=float, default=30.0)
     p.add_argument("--dfrft-fine-fd0-step", type=float, default=1.0)
+    p.add_argument("--unwrap-centered-cfo", action="store_true",
+                   help="Lift comb-pilot FFT frequencies into the bounded frame-start CFO interval (long frames).")
     return p.parse_args()
 
 
@@ -196,12 +198,21 @@ def _estimate_hybrid_cuda_batch(
         (frequency[None, None, :] >= torch.minimum(lower, upper)[:, :, None])
         & (frequency[None, None, :] <= torch.maximum(lower, upper)[:, :, None])
     )
+    lifted = None
+    if hybrid_config.unwrap_centered_cfo:
+        period = 1.0 / dt
+        if float(config.fd0_max_hz - config.fd0_min_hz) >= period:
+            raise ValueError("CFO search width must be below the comb-pilot sampling rate.")
+        lifted = lower[:, :, None] + torch.remainder(frequency[None, None, :] - lower[:, :, None], period)
+        allowed = lifted <= upper[:, :, None]
     flat_power = power.masked_fill(~allowed, -torch.inf).reshape(batch, -1)
     coarse_score, flat_index = torch.max(flat_power, dim=1)
     coarse_mu_index = torch.div(flat_index, fft_size, rounding_mode="floor")
     frequency_index = flat_index.remainder(fft_size)
     coarse_mu = coarse_mu_grid[coarse_mu_index]
     centered_cfo = frequency[frequency_index]
+    if lifted is not None:
+        centered_cfo = lifted[torch.arange(batch, device=device), coarse_mu_index, frequency_index]
     coarse_fd0 = centered_cfo - coarse_mu * center
 
     if not refine:
@@ -478,6 +489,7 @@ def main() -> None:
             fine_mu_step_hz_per_s=args.dfrft_fine_mu_step,
             fine_fd0_radius_hz=args.dfrft_fine_fd0_radius,
             fine_fd0_step_hz=args.dfrft_fine_fd0_step,
+            unwrap_centered_cfo=args.unwrap_centered_cfo,
         )
         estimator = (
             HybridDFRFTPilotEstimator(cfg, hybrid_cfg)

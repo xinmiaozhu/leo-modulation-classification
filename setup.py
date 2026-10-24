@@ -31,5 +31,6 @@ setup(
     ],
     extras_require={
         "dev": ["pytest>=7.0"],
+        "paper": ["pypdf>=5.0"],
     },
 )

@@ -9,7 +9,7 @@ from .paper_baselines import (
     CNNLSTMDualStreamBaseline,
     SatelliteLightCNNBaseline,
     STARNetBaseline,
-    NASAHOCNetBaseline,
+    IQFormerBaseline,
     build_paper_baseline,
 )
 from .losses import (
@@ -34,7 +34,7 @@ __all__ = [
     "CNNLSTMDualStreamBaseline",
     "SatelliteLightCNNBaseline",
     "STARNetBaseline",
-    "NASAHOCNetBaseline",
+    "IQFormerBaseline",
     "build_paper_baseline",
     "GateConsistencyLoss",
     "compute_hoc_reliability_target",

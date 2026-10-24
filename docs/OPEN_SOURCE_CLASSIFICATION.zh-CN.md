@@ -4,13 +4,13 @@
 
 ## 1. 开源范围应覆盖什么
 
-论文最终接收机为：已知公共导频 → 载频偏差/多普勒率估计 → 补偿 → I/Q 与 48 维全候选星座描述符 → 双流融合分类。HOC 用于机理诊断及 NASA 基线，不是最终提出网络的输入。
+论文默认接收机为：已知公共导频 → 载频偏差/多普勒率估计 → 补偿 → I/Q 与 48 维全候选星座描述符 → 双流融合分类。HOC 用于机理诊断及匹配五种子 HOC 对照，默认双流模型不输入 HOC。IQFormer 基线使用补偿 I/Q 及其 STFT 表征。
 
 完整复现应同时覆盖：
 
 - 第 II 节：LEO 几何、波形、导频、信道与损伤仿真。
 - 第 III 节：Fresnel 衰减、特征退化、残余误差容限校准。
-- 第 IV 节：Protocol A 一维相干搜索；Protocol B DFRFT 等价捕获与局部相干精化；48 维描述符；双流网络。
+- 第 IV 节：Protocol A 一维相干搜索；Protocol B DCFT 捕获与局部相干精化；48 维描述符；双流网络。
 - 第 V 节：五种子主对比、表示消融、前端归因、理想化似然参考、多径均衡、整轨留出、复杂度与绘图。
 
 推荐采用“源代码仓库 + 精选结果 + 独立数据/权重附件”。不建议直接上传整个工作目录。
@@ -23,7 +23,7 @@
 | `scripts/01`—`51` 的全部现有 `.py`、`.ps1` | 按任务顺序编号，主线、诊断与扩展见 [脚本索引](../scripts/README.md)。编号是索引，不意味着每次按 01—51 顺序执行。 |
 | `configs/model/dualnet_iq_evm.yaml` | 最终双流模型配置，必须明确指定。 |
 | `configs/model/dualnet_iq_only.yaml`、`dualnet_evm_only.yaml` | 两个单流消融。 |
-| `configs/model/paper_*.yaml` | CNN2、MCNet、CNN-LSTM、IQCNet、NASA HOC-NN、STARNet 基线。 |
+| `configs/model/paper_*.yaml` | CNN2、MCNet、CNN-LSTM、IQCNet、IQFormer、STARNet 基线。 |
 | `configs/train/train_long.yaml` | 论文主实验训练配置：初始学习率 0.0005，batch size 128，最多 100 epochs，早停 patience 25。 |
 | 其他 `configs/**/*.yaml` | 保留并标注示例/历史/扩展用途；不要将默认示例冒充论文最终配置。 |
 | `tests/*.py` | 保留现有调制、同步、数据划分、特征、网络和训练等回归检查。 |
@@ -46,7 +46,7 @@
 | 04—05 | 划分与审计 | 整轨留出及泄漏检查。 |
 | 06—08、10 | 接收机前处理 | 导频参数估计、联合精化、补偿 I/Q 和星座描述符；具体顺序以 A/B 指南为准。 |
 | 09 | 多径均衡 | 补偿后、描述符提取前的可选 Pilot-LS 与 oracle 对照。 |
-| 11—12 | HOC 与基线特征 | 理论诊断、NASA HOC-NN 等，不能作为最终提出方法第三分支。 |
+| 11 | HOC 诊断 | 理论诊断与独立 HOC 消融；IQFormer 不使用 HOC。 |
 | 13—14 | 训练与评估 | 所有模型的公共入口。 |
 | 15—17 | 基线与多种子主实验 | A 的 proposed/MCNet 用 15，STARNet 见 16；最终 B 使用 17。 |
 | 18—20 | 消融 | A 表示消融用 18 的 A 路径；最终 B 用 19；20 为导频权重消融。 |
@@ -58,7 +58,7 @@
 | 41—42 | 复杂度 | 网络与描述符耗时；区分 A/B 和前处理/网络/E2E。 |
 | 43—51 | 可视化 | 框架、导频误差、混淆矩阵、SNR 准确率、基线、消融、容限和信道边界。 |
 
-关键版本区别：`15_run_exact_mixture_seeds.py` 也有 B 路径，但读取旧 `data/features/exact_mixture/protocol_b_symbol_exact.h5`；最终 B 主实验 `17_run_hybrid_dfrft_seeds.py` 读取 `data/features/hybrid_dfrft/protocol_b_symbol_exact.h5`。`18` 与 `19` 的 B 消融同理。不能把旧 B 汇总当成论文最终结果。
+关键版本区别：`14_run_exact_mixture_seeds.py` 也有 B 路径，但读取旧 `data/features/exact_mixture/protocol_b_symbol_exact.h5`；最终 B 主实验 `16_run_hybrid_dfrft_seeds.py` 读取 `data/features/hybrid_dfrft/protocol_b_symbol_exact.h5`。`18` 与 `19` 的 B 消融同理。不能把旧 B 汇总当成论文最终结果。
 
 ## 4. 第二类：精选后上传的小型结果和复现元数据
 
@@ -165,3 +165,11 @@ repository/
 ```
 
 建议首次发布保留现有 Python 模块和编号脚本，避免为了改名破坏导入、硬编码路径或权重兼容。最优先的工作是补齐运行指南、固定正式配置/数据/权重、筛选论文结果并整理暂存文件。
+
+## 当前附加 HOC 对照与早期结果清理
+
+已移除早期五分类 HOC/EVM 分支测试结果和七分类验证集分支筛选结果，相关过期清单条目同步移除；它们不构成最终协议下的多种子证据。当前目录未发现这些旧实验的专用生成脚本、模型配置或权重。
+
+现有脚本 18 统一运行最终 A/B 的表示消融与 `fusion_hoc` 对照，脚本 19 复用它并默认选择 B。两者均使用既有完整 48 维描述符；从原补偿 I/Q 计算真实 21 维 HOC，训练集拟合标准化参数。B 的 `hybrid_dfrft` 仅为历史路径名，论文术语为 DCFT。运行命令与统计口径见两个 RUN 指南；新增结果须待训练和最终测试完成后报告。
+
+新增 `iq_hoc` 对照复用同一真实 HOC 特征，但关闭星座描述符分支。HOC 编码器采用与原描述符分支相同的 64–64 隐藏层和 128 维输出，两种双分支模型的融合结构一致，输入维度分别为 21 和 48，参数总数并非完全相等。现有 `fusion_hoc` 的 128–128 HOC 隐藏层及结果保持原样。`paired_descriptor_vs_hoc.csv` 按匹配种子报告星座描述符融合准确率减去 I/Q+HOC 准确率的百分点差值，正值表示星座描述符占优。

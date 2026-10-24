@@ -71,10 +71,12 @@ class DRCDualNet(nn.Module):
     ) -> None:
         super().__init__()
         self.use_iq_stream = bool(use_iq_stream)
-        if use_hoc_stream:
-            raise ValueError("DRCDualNet supports only I/Q and constellation streams.")
+        self.use_hoc_stream = bool(use_hoc_stream)
+        if self.use_hoc_stream and hoc_dim <= 0:
+            raise ValueError("A positive hoc_dim is required for the HOC ablation.")
         if not (
             self.use_iq_stream
+            or self.use_hoc_stream
             or use_constellation_image
             or use_evm_features
         ):
@@ -129,9 +131,19 @@ class DRCDualNet(nn.Module):
         else:
             self.constellation_stream = None
 
+        # Construct after the existing streams to preserve their initialization
+        # and the state-dict layout when the optional HOC branch is disabled.
+        self.hoc_stream = (
+            EVMFeatureStream(
+                evm_dim=hoc_dim, feature_dim=feature_dim,
+                hidden_dims=hoc_hidden_dims, dropout=dropout,
+            )
+            if self.use_hoc_stream else None
+        )
         num_feature_streams = (
             int(self.use_iq_stream)
             + int(self.use_constellation_image or self.use_evm_features)
+            + int(self.use_hoc_stream)
         )
         fusion_in = num_feature_streams * feature_dim + (meta_dim if use_metadata else 0)
         fusion_type = fusion_type.lower()
@@ -190,6 +202,13 @@ class DRCDualNet(nn.Module):
                 f_const = self.constellation_stream(evm_features)
             parts.append(f_const)
             out["f_constellation"] = f_const
+
+        if self.hoc_stream is not None:
+            if hoc is None:
+                raise ValueError("hoc input is required when use_hoc_stream=True.")
+            f_hoc = self.hoc_stream(hoc)
+            parts.append(f_hoc)
+            out["f_hoc"] = f_hoc
 
         if self.use_metadata:
             if meta is None:
