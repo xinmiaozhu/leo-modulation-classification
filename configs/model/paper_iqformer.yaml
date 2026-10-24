@@ -1,0 +1,11 @@
+# IQFormer (IEEE TCCN 2025), official RadioML architecture.
+# Source: https://github.com/WestdoorSad/IQFormer
+# Native windows; train on four randomly selected windows, test on all 64.
+model:
+  input_length: 128
+  layers: [2, 3, 2]
+  embed_dims: [64, 64, 64]
+  dropout: 0.2
+  drop_path_rate: 0.0
+  train_windows: 4
+  window_batch_size: 256
