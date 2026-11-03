@@ -57,7 +57,7 @@ To evaluate existing checkpoints and rebuild summaries:
 python scripts/14_run_exact_mixture_seeds.py --protocols A --methods proposed mcnet --stages eval summary --device cuda
 ```
 
-Protocol B in script 15 is the older path. Use [RUN_HYBRID_DFRFT.md](RUN_HYBRID_DFRFT.md)
+Protocol B in script 15 is the older path. Use [RUN_DCFT.md](RUN_DCFT.md)
 for the promoted Protocol B front end. STARNet has a separate Protocol A runner,
 `scripts/15_run_starnet_seeds.py`; the two-method command above does not run it.
 
@@ -86,8 +86,7 @@ with the original two streams. The default receiver remains two-stream.
 
 The existing model configuration is reused with `--use-hoc-stream` at training;
 evaluation restores the model configuration from the checkpoint. No separate
-model YAML or code file is needed. Protocol B's historical `hybrid_dfrft`
-directory denotes DCFT acquisition plus local coherent refinement.
+model YAML or code file is needed. Protocol B now uses acquisition-only artifacts under `dcft_acquisition`.
 
 Results are written alongside the original representation ablations under
 `fusion_hoc/seed_<seed>_test.csv`. `seed_summary.csv` reports sample SD;
@@ -133,7 +132,7 @@ specified seeds. Do not report new scores before training and testing finish.
 Run IQFormer on the final Protocol-A data and matched five seeds:
 
 ```powershell
-python scripts/16_run_hybrid_dfrft_seeds.py --protocols A --methods iqformer --seeds 41 73 107 149 211 --device cuda --report
+python scripts/16_run_dcft_seeds.py --protocols A --methods iqformer --seeds 41 73 107 149 211 --device cuda --report
 ```
 
 See README for the official architecture, STFT verification, window policy,

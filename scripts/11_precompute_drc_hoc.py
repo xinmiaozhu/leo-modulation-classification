@@ -162,7 +162,6 @@ def main():
             fw.create_dataset("selected_evm_timing", shape=(num_samples,), dtype="int64", compression="gzip")
             fw.create_dataset("selected_evm_phase", shape=(num_samples,), dtype="float32", compression="gzip")
             fw.create_dataset("evm_rerank_used", shape=(num_samples,), dtype="bool", compression="gzip")
-            fw.create_dataset("evm_fine_used", shape=(num_samples,), dtype="bool", compression="gzip")
             fw.create_dataset("evm_candidate_count", shape=(num_samples,), dtype="int64", compression="gzip")
             fw.create_dataset("evm_label_aware_used", shape=(num_samples,), dtype="bool", compression="gzip")
             fw.create_dataset("evm_allowed_modulations", shape=(num_samples,), dtype="S64", compression="gzip")
@@ -218,7 +217,6 @@ def main():
                     fw["selected_evm_timing"][i] = int(extra.get("selected_evm_timing", -1))
                     fw["selected_evm_phase"][i] = extra.get("selected_evm_phase", np.nan)
                     fw["evm_rerank_used"][i] = bool(extra.get("evm_rerank_used", False))
-                    fw["evm_fine_used"][i] = bool(extra.get("evm_fine_used", False))
                     fw["evm_candidate_count"][i] = int(extra.get("evm_candidate_count", 0))
                     fw["evm_label_aware_used"][i] = bool(extra.get("evm_label_aware_used", False))
                     fw["evm_allowed_modulations"][i] = ",".join(extra.get("evm_allowed_modulations", ())).encode("utf-8")
@@ -259,7 +257,6 @@ def main():
                     fw["selected_evm_timing"][i] = -1
                     fw["selected_evm_phase"][i] = np.nan
                     fw["evm_rerank_used"][i] = False
-                    fw["evm_fine_used"][i] = False
                     fw["evm_candidate_count"][i] = 0
                     fw["evm_label_aware_used"][i] = False
                     fw["evm_allowed_modulations"][i] = b""

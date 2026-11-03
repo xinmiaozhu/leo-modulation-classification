@@ -1,12 +1,11 @@
-"""Pilot-aided DCFT-based chirp-focus acquisition with coherent local refinement.
+"""Pilot-aided DCFT chirp-focus acquisition.
 
 The estimator is intentionally modulation independent.  Known pilots are
 removed first, a physically calibrated chirp-focus bank estimates Doppler rate
-and the focused FFT peak estimates centered CFO, and the existing coherent
-pilot likelihood refines both parameters locally.  No payload label, HOC, EVM,
+and the focused FFT peak estimates centered CFO.  No payload label, HOC, EVM,
 or constellation candidate is used.
 
-Historical DFRFT module and class names are retained for compatibility.
+The acquisition peak supplies the final rate and frame-start CFO estimates.
 """
 
 from __future__ import annotations
@@ -19,13 +18,9 @@ from .pilot_estimator import PilotMuEstimator, PilotMuEstimatorConfig, PilotMuRe
 
 
 @dataclass
-class HybridDFRFTConfig:
+class DCFTConfig:
     coarse_mu_step_hz_per_s: float = 160.0
     fft_size: int = 2048
-    fine_mu_radius_hz_per_s: float = 200.0
-    fine_mu_step_hz_per_s: float = 5.0
-    fine_fd0_radius_hz: float = 30.0
-    fine_fd0_step_hz: float = 1.0
     peak_exclude_bins: int = 2
     unwrap_centered_cfo: bool = False
 
@@ -34,7 +29,7 @@ class HybridDFRFTConfig:
 
 
 @dataclass
-class HybridDFRFTResult:
+class DCFTResult:
     estimate: PilotMuResult
     coarse_mu_hz_per_s: float
     coarse_centered_cfo_hz: float
@@ -50,22 +45,20 @@ class HybridDFRFTResult:
         return payload
 
 
-class HybridDFRFTPilotEstimator:
-    """DCFT-based chirp-focus acquisition followed by coherent refinement.
-
-    The historical class name is retained for compatibility.
+class DCFTPilotEstimator:
+    """DCFT acquisition on a physically bounded rate/frequency grid.
     """
 
     def __init__(
         self,
         pilot_config: PilotMuEstimatorConfig,
-        hybrid_config: HybridDFRFTConfig | None = None,
+        dcft_config: DCFTConfig | None = None,
     ) -> None:
         self.pilot_config = pilot_config
-        self.hybrid_config = hybrid_config or HybridDFRFTConfig()
-        if self.hybrid_config.coarse_mu_step_hz_per_s <= 0.0:
+        self.dcft_config = dcft_config or DCFTConfig()
+        if self.dcft_config.coarse_mu_step_hz_per_s <= 0.0:
             raise ValueError("coarse_mu_step_hz_per_s must be positive.")
-        if self.hybrid_config.fft_size < 8:
+        if self.dcft_config.fft_size < 8:
             raise ValueError("fft_size must be at least 8.")
         self.pilot = PilotMuEstimator(pilot_config)
 
@@ -91,9 +84,9 @@ class HybridDFRFTPilotEstimator:
         mu_grid = make_grid(
             self.pilot_config.mu_min,
             self.pilot_config.mu_max,
-            self.hybrid_config.coarse_mu_step_hz_per_s,
+            self.dcft_config.coarse_mu_step_hz_per_s,
         )
-        fft_size = max(int(self.hybrid_config.fft_size), int(z.size))
+        fft_size = max(int(self.dcft_config.fft_size), int(z.size))
         frequency = np.fft.fftshift(np.fft.fftfreq(fft_size, d=dt))
         dechirped = z[None, :] * np.exp(-1j * np.pi * mu_grid[:, None] * tau[None, :] ** 2)
         spectrum = np.fft.fftshift(np.fft.fft(dechirped, n=fft_size, axis=1), axes=1)
@@ -104,7 +97,7 @@ class HybridDFRFTPilotEstimator:
             lower = float(self.pilot_config.fd0_min_hz) + float(mu) * center
             upper = float(self.pilot_config.fd0_max_hz) + float(mu) * center
             lo, hi = min(lower, upper), max(lower, upper)
-            if self.hybrid_config.unwrap_centered_cfo:
+            if self.dcft_config.unwrap_centered_cfo:
                 period = 1.0 / dt
                 if hi - lo >= period:
                     raise ValueError("CFO search width must be below the comb-pilot sampling rate.")
@@ -121,7 +114,7 @@ class HybridDFRFTPilotEstimator:
 
         candidates.sort(key=lambda item: item[0], reverse=True)
         best_score, best_mu_index, best_frequency_index = candidates[0]
-        exclusion = max(0, int(self.hybrid_config.peak_exclude_bins))
+        exclusion = max(0, int(self.dcft_config.peak_exclude_bins))
         second_score = -np.inf
         for score, mu_index, frequency_index in candidates[1:]:
             if (
@@ -137,7 +130,7 @@ class HybridDFRFTPilotEstimator:
         )
         coarse_mu = float(mu_grid[best_mu_index])
         centered_cfo = float(frequency[best_frequency_index])
-        if self.hybrid_config.unwrap_centered_cfo:
+        if self.dcft_config.unwrap_centered_cfo:
             lower = float(self.pilot_config.fd0_min_hz) + coarse_mu * center
             centered_cfo = lower + float(np.remainder(centered_cfo - lower, 1.0 / dt))
         frame_start_cfo = centered_cfo - coarse_mu * center
@@ -156,7 +149,7 @@ class HybridDFRFTPilotEstimator:
         iq: np.ndarray,
         pilot_indices: np.ndarray,
         pilot_symbols: np.ndarray,
-    ) -> HybridDFRFTResult:
+    ) -> DCFTResult:
         best_payload: tuple | None = None
         best_timing = 0
         best_z = np.asarray([], dtype=np.complex128)
@@ -177,49 +170,13 @@ class HybridDFRFTPilotEstimator:
 
         assert best_payload is not None
         coarse_mu, centered_cfo, coarse_fd0, coarse_score, coarse_margin, bin_spacing, num_mu = best_payload
-        if not np.isfinite(coarse_score):
-            invalid = PilotMuResult(np.nan, np.nan, float(coarse_score), np.nan, best_timing, int(best_z.size), False)
-            return HybridDFRFTResult(
-                invalid,
-                float(coarse_mu),
-                float(centered_cfo),
-                float(coarse_fd0),
-                float(coarse_score),
-                float(coarse_margin),
-                float(bin_spacing),
-                int(num_mu),
-            )
-
-        mu_radius = max(0.0, float(self.hybrid_config.fine_mu_radius_hz_per_s))
-        fine_mu = make_grid(
-            max(self.pilot_config.mu_min, coarse_mu - mu_radius),
-            min(self.pilot_config.mu_max, coarse_mu + mu_radius),
-            self.hybrid_config.fine_mu_step_hz_per_s,
+        acquisition = PilotMuResult(
+            float(coarse_mu), float(coarse_fd0), float(coarse_score),
+            float(coarse_margin), best_timing, int(best_z.size),
+            bool(np.isfinite(coarse_score)),
         )
-        fd_radius = max(0.0, float(self.hybrid_config.fine_fd0_radius_hz))
-        fine_fd0 = make_grid(
-            max(self.pilot_config.fd0_min_hz, coarse_fd0 - fd_radius),
-            min(self.pilot_config.fd0_max_hz, coarse_fd0 + fd_radius),
-            self.hybrid_config.fine_fd0_step_hz,
-        )
-        mu_hat, fd0_hat, score, margin = self.pilot._score_grid(
-            best_z,
-            best_t,
-            fine_mu,
-            fine_fd0,
-        )
-        valid = bool(np.isfinite(score))
-        estimate = PilotMuResult(
-            float(mu_hat),
-            float(fd0_hat),
-            float(score),
-            float(margin),
-            best_timing,
-            int(best_z.size),
-            valid,
-        )
-        return HybridDFRFTResult(
-            estimate,
+        return DCFTResult(
+            acquisition,
             float(coarse_mu),
             float(centered_cfo),
             float(coarse_fd0),
@@ -236,17 +193,17 @@ class FrFTCaptureConfig:
     output_size: int = 1024
 
 
-class FrFTPilotEstimator(HybridDFRFTPilotEstimator):
-    """Physically bounded FrFT angle search with the unchanged local refiner.
+class FrFTPilotEstimator(DCFTPilotEstimator):
+    """Physically bounded FrFT angle acquisition.
 
     Motivated by Luo et al., IEEE Access 2019, DOI 10.1109/ACCESS.2019.2903185.
     Adaptation: known AMC comb pilots replace GNSS correlations; angle sampling
-    is validation-selected, and the project's common coherent refiner replaces
+    is validation-selected. This implementation does not include
     the paper's NLS/alternate-search extension. Not an exact paper reproduction.
     """
 
-    def __init__(self, pilot_config, hybrid_config=None, frft_config=None):
-        super().__init__(pilot_config, hybrid_config)
+    def __init__(self, pilot_config, dcft_config=None, frft_config=None):
+        super().__init__(pilot_config, dcft_config)
         self.frft_config = frft_config or FrFTCaptureConfig()
         if self.frft_config.angle_count < 2:
             raise ValueError("At least two FrFT angles required")

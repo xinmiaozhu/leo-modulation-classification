@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.drc_hoc.hybrid_dfrft_estimator import HybridDFRFTConfig, HybridDFRFTPilotEstimator
+from src.drc_hoc.dcft_estimator import DCFTConfig, DCFTPilotEstimator
 from src.drc_hoc.pilot_estimator import PilotMuEstimatorConfig
 
 
@@ -14,9 +14,9 @@ def test_pilot_chirp_focus_recovers_rate_and_frame_start_cfo():
         fd0_max_hz=550.0,
         pilot_weighting="coherent",
     )
-    hybrid = HybridDFRFTPilotEstimator(
+    hybrid = DCFTPilotEstimator(
         config,
-        HybridDFRFTConfig(coarse_mu_step_hz_per_s=160.0, fft_size=2048),
+        DCFTConfig(coarse_mu_step_hz_per_s=160.0, fft_size=2048),
     )
     t = np.arange(64, dtype=np.float64) * (16 * 8 / config.sample_rate_hz)
     mu = -4321.0
@@ -40,12 +40,11 @@ def test_frft_czt_matches_independent_dense_kernel():
         np.testing.assert_allclose(plan.transform(z), plan.direct_reference(z), atol=2e-11)
 
 
-def test_frft_physical_units_and_off_grid_refinement():
+def test_frft_physical_units_and_off_grid_acquisition():
     from src.drc_hoc.frft import rate_to_frft_angle
-    from src.drc_hoc.hybrid_dfrft_estimator import FrFTPilotEstimator, FrFTCaptureConfig
-    from src.drc_hoc.pilot_estimator import make_grid
+    from src.drc_hoc.dcft_estimator import FrFTPilotEstimator, FrFTCaptureConfig
     config = PilotMuEstimatorConfig(mu_min=-8160, mu_max=-180, fd0_min_hz=-550, fd0_max_hz=550)
-    estimator = FrFTPilotEstimator(config, HybridDFRFTConfig(), FrFTCaptureConfig(65, 2048))
+    estimator = FrFTPilotEstimator(config, DCFTConfig(), FrFTCaptureConfig(65, 2048))
     dt = 16 * 8 / 200000
     for start in (0., .003):
         t = start + np.arange(64) * dt
@@ -57,17 +56,11 @@ def test_frft_physical_units_and_off_grid_refinement():
             np.testing.assert_allclose(cf, fc - cm * t.mean(), atol=1e-12)
             assert abs(cm - mu) < 150
             assert abs(cf - f0) < 5
-            mg = make_grid(max(-8160, cm - 200), min(-180, cm + 200), 5)
-            fg = make_grid(max(-550, cf - 30), min(550, cf + 30), 1)
-            rm, rf, *_ = estimator.pilot._score_grid(z, t, mg, fg)
-            # CFO/rate errors are coupled on the finite observation interval.
-            assert abs(rm - mu) < 40
-            assert abs(rf - f0) < 1
 
 
 def test_frft_rejects_nonuniform_pilot_times():
     import pytest
-    from src.drc_hoc.hybrid_dfrft_estimator import FrFTPilotEstimator
+    from src.drc_hoc.dcft_estimator import FrFTPilotEstimator
     t = np.arange(64) * .00064
     t[20] += .00001
     with pytest.raises(ValueError, match="uniformly"):

@@ -36,11 +36,10 @@ checkpoints, logs, and paper artifacts.
 
 ## Front end and long-frame checks
 
-All lengths use DCFT acquisition and local coherent refinement, coherent pilot
+All lengths use DCFT acquisition, coherent pilot
 weighting, nominal timing phase zero, and a frame-start CFO search [-550,550] Hz.
-At N<=8192 the paper's rate spacing 160/5 Hz/s and FFT length 2048 remain.
-At N=16384 the coarse/fine rate spacing is 40/1.25 Hz/s, fine rate radius is
-50 Hz/s, FFT length is 4096, and fine CFO spacing is 0.5 Hz (radius 30 Hz).
+At N<=8192 the rate spacing is 160 Hz/s and the FFT length is 2048.
+At N=16384 the rate spacing is 40 Hz/s and the FFT length is 4096.
 The rule holds or improves accumulated-phase grid resolution without selecting
 settings on test data. Costs therefore include the necessary longer-frame search.
 
@@ -85,11 +84,14 @@ training run is substituted for the five-seed formal experiment.
 
 ## Outputs and interpretation
 
-- Data: `data/experiments/frame_length_protocol_b/`.
-- Weights: `outputs/checkpoints/frame_length_protocol_b/`.
-- Results: `outputs/results/frame_length_protocol_b/`.
+- Data: `data/experiments/frame_length_dcft_acquisition/`.
+- Weights: `outputs/checkpoints/frame_length_dcft_acquisition/`.
+- Results: `outputs/results/frame_length_dcft_acquisition/`.
 - Current step and child log: `status.json`; completed cells: `completeness.json`.
-- Formal artifacts: `outputs/results/frame_length_protocol_b/paper/`.
+- Figure: `outputs/figures/paper/frame_length_protocol_b_accuracy_vs_snr.pdf`
+  and the matching `.png`.
+- Markdown notes and artifact manifest:
+  `outputs/results/frame_length_dcft_acquisition/paper/`.
 
 After the 60 validated test results, frozen diagnostics, and timing runs exist:
 
@@ -98,8 +100,9 @@ After the 60 validated test results, frozen diagnostics, and timing runs exist:
 ```
 
 The final controller invokes the same publication function automatically. It
-writes a CSV/LaTeX table, a PDF/PNG figure, figure LaTeX, and an English manuscript
-paragraph. It checks test indices, labels, SNR, correctness flags, training seed,
+writes a PDF/PNG figure and an English manuscript paragraph in Markdown.
+No manuscript tables or LaTeX files are exported. Numerical per-seed and per-SNR
+summaries remain available as experiment records. It checks test indices, labels, SNR, correctness flags, training seed,
 input provenance, and validation checkpoint selection before publishing.
 
 The figure shows the proposed receiver's four five-seed mean accuracy/SNR
@@ -108,9 +111,10 @@ inch working canvas, 10:9 axes aspect, inset geometry, markers, grid, legend,
 and 600 dpi. Exported PDF page dimensions and PNG pixel dimensions are verified
 against the reference artifact (246.723712x219.246589 pt; 2058x1827 pixels).
 
-The table reports frame duration, pilot count, rate/CFO/phase-bound P95, each
-model's accuracy mean and sample SD, and measured complete receiver CPU median
-latency. The CPU timing uses one thread, seed-41 weights, 77 class/SNR-stratified
+The Markdown notes report each length's mean accuracy and sample SD across the
+five training seeds, along with the observation-duration tradeoff. Separate
+diagnostic records retain estimation errors and CPU timings. The CPU timing
+uses one thread, seed-41 weights, 77 class/SNR-stratified
 validation frames, three repeats and ten warmups. It includes estimation,
 compensation, descriptor construction, normalization and inference; it excludes
 disk I/O and observation waiting time. Timing variability is separate from

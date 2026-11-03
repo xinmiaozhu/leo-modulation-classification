@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 import torch
 
-from src.drc_hoc.hybrid_dfrft_estimator import HybridDFRFTConfig, HybridDFRFTPilotEstimator
+from src.drc_hoc.dcft_estimator import DCFTConfig, DCFTPilotEstimator
 from src.drc_hoc.pilot_estimator import PilotMuEstimatorConfig
 from src.experiments import frame_length as campaign
 from src.experiments.frame_length_report import publish, plot_curves
@@ -19,14 +19,14 @@ def test_long_frame_fft_alias_is_lifted_into_physical_cfo_interval():
     assert fd0+mu*t.mean() < -1/(2*(t[1]-t[0]))
     z=np.exp(1j*(2*np.pi*fd0*t+np.pi*mu*t*t))
     config=PilotMuEstimatorConfig(fd0_min_hz=-550,fd0_max_hz=550)
-    estimator=HybridDFRFTPilotEstimator(config,HybridDFRFTConfig(
+    estimator=DCFTPilotEstimator(config,DCFTConfig(
         coarse_mu_step_hz_per_s=40,fft_size=4096,unwrap_centered_cfo=True))
     got=estimator._chirp_focus(z,t)
     assert abs(got[0]-mu)<=40
     assert abs(got[2]-fd0)<2
     # Reject an intrinsically ambiguous prior instead of selecting a hidden alias.
-    wide=HybridDFRFTPilotEstimator(PilotMuEstimatorConfig(fd0_min_hz=-1000,fd0_max_hz=1000),
-                                 HybridDFRFTConfig(unwrap_centered_cfo=True))
+    wide=DCFTPilotEstimator(PilotMuEstimatorConfig(fd0_min_hz=-1000,fd0_max_hz=1000),
+                                 DCFTConfig(unwrap_centered_cfo=True))
     with pytest.raises(ValueError,match='width'):
         wide._chirp_focus(z,t)
 
@@ -42,11 +42,10 @@ def test_cuda_long_frame_matches_cpu():
         pilot_enabled=True,pilot_pattern='comb',pilot_interval_symbols=16,pilot_guard_symbols=0))
     cfg=PilotMuEstimatorConfig(sample_rate_hz=200000,samples_per_symbol=8,fd0_min_hz=-550,fd0_max_hz=550,
                               pilot_weighting='coherent',timing_phases=(0,))
-    hybrid=HybridDFRFTConfig(coarse_mu_step_hz_per_s=40,fft_size=4096,
-        fine_mu_radius_hz_per_s=50,fine_mu_step_hz_per_s=1.25,fine_fd0_step_hz=.5,unwrap_centered_cfo=True)
-    cpu=HybridDFRFTPilotEstimator(cfg,hybrid).estimate(sample.iq,sample.pilot_indices,sample.pilot_symbols).estimate
-    gpu=estimator_script._estimate_hybrid_cuda_batch(sample.iq[None],sample.pilot_indices[None],sample.pilot_symbols[None],
-        config=cfg,hybrid_config=hybrid,device=torch.device('cuda'),rrc_taps=rrc_filter(.35,8,8))
+    hybrid=DCFTConfig(coarse_mu_step_hz_per_s=40,fft_size=4096,unwrap_centered_cfo=True)
+    cpu=DCFTPilotEstimator(cfg,hybrid).estimate(sample.iq,sample.pilot_indices,sample.pilot_symbols).estimate
+    gpu=estimator_script._estimate_dcft_cuda_batch(sample.iq[None],sample.pilot_indices[None],sample.pilot_symbols[None],
+        config=cfg,dcft_config=hybrid,device=torch.device('cuda'),rrc_taps=rrc_filter(.35,8,8))
     assert abs(cpu.mu_hat_hz_per_s-gpu[0][0])<=1.26
     assert abs(cpu.fd0_hat_hz-gpu[1][0])<=.51
     assert abs(cpu.mu_hat_hz_per_s+8000)<30

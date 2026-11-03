@@ -31,7 +31,7 @@ import torch
 
 from src.datasets.feature_dataset import _preprocess_iq
 from src.drc_hoc.compensation import compensate_full_doppler
-from src.drc_hoc.hybrid_dfrft_estimator import HybridDFRFTConfig, HybridDFRFTPilotEstimator
+from src.drc_hoc.dcft_estimator import DCFTConfig, DCFTPilotEstimator
 from src.drc_hoc.pilot_estimator import PilotMuEstimator, PilotMuEstimatorConfig
 from src.models.drc_dualnet import DRCDualNet
 from src.models.paper_baselines import build_paper_baseline
@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--table-iv", action="store_true",
                    help="Publish the formal five-seed Table IV from validated experiment results (default with no raw-data argument).")
     p.add_argument("--protocol-b", action="store_true",
-                   help="Benchmark the final Protocol-B DCFT acquisition plus coherent refinement front end.")
+                   help="Benchmark the final Protocol-B DCFT acquisition front end.")
     p.add_argument("--methods", nargs="+", choices=list(METHODS), default=list(METHODS))
     p.add_argument("--iqformer-checkpoint", default="outputs/checkpoints/exact_mixture/protocol_a/iqformer/seed_41/best.pt")
     p.add_argument("--raw-data")
@@ -394,7 +394,7 @@ def _stratified_frontend_indices(
 def main() -> None:
     args = parse_args()
     if args.table_iv:
-        runner = _load_script("16_run_hybrid_dfrft_seeds.py", "table_iv_report")
+        runner = _load_script("16_run_dcft_seeds.py", "table_iv_report")
         runner.five_seed_report(require_complete=True)
         table = PROJECT_ROOT / "outputs/results/baseline_comparison/table_iv.csv"
         if not table.exists():
@@ -412,7 +412,7 @@ def main() -> None:
     checkpoint_root = Path(args.checkpoint_root)
     proposed_checkpoint = Path(args.proposed_checkpoint)
     if args.protocol_b:
-        proposed_checkpoint = Path("outputs/checkpoints/frft_dcft_comparison/dcft_refined/seed_41/best.pt")
+        proposed_checkpoint = Path("outputs/checkpoints/dcft_acquisition/protocol_b/proposed/seed_41/best.pt")
     starnet_checkpoint = Path(args.starnet_checkpoint)
     mcnet_checkpoint = Path(args.mcnet_checkpoint) if args.mcnet_checkpoint else None
     summary = pd.read_csv(args.summary)
@@ -454,7 +454,7 @@ def main() -> None:
     checkpoint_overrides = None
     checkpoint_unavailable_architecture_only: list[str] = []
     if args.protocol_b:
-        estimator = HybridDFRFTPilotEstimator(
+        estimator = DCFTPilotEstimator(
             PilotMuEstimatorConfig(
                 sample_rate_hz=200000.0,
                 samples_per_symbol=8,
@@ -468,13 +468,7 @@ def main() -> None:
                 pilot_weighting="coherent",
                 min_pilots=8,
             ),
-            HybridDFRFTConfig(
-                coarse_mu_step_hz_per_s=160.0,
-                fft_size=2048,
-                fine_mu_radius_hz_per_s=200.0,
-                fine_mu_step_hz_per_s=5.0,
-                fine_fd0_radius_hz=30.0,
-                fine_fd0_step_hz=1.0,
+            DCFTConfig(coarse_mu_step_hz_per_s=160.0, fft_size=2048,
             ),
         )
     else:
@@ -653,10 +647,10 @@ def main() -> None:
                 "c6_iqformer": "iqformer",
             }
             checkpoint_overrides = {
-                method: Path("outputs/checkpoints/hybrid_dfrft/protocol_b") / name / "seed_41/best.pt"
+                method: Path("outputs/checkpoints/dcft_acquisition/protocol_b") / name / "seed_41/best.pt"
                 for method, name in method_to_b_name.items()
             }
-            checkpoint_overrides["c7_starnet"] = Path("outputs/checkpoints/starnet_seeds/protocol_b/seed_41/best.pt")
+            checkpoint_overrides["c7_starnet"] = Path("outputs/checkpoints/dcft_acquisition/protocol_b/starnet/seed_41/best.pt")
             checkpoint_unavailable_architecture_only = [
                 method for method, path in checkpoint_overrides.items() if not (PROJECT_ROOT / path).exists()
             ]
@@ -732,7 +726,7 @@ def main() -> None:
     metadata = {
         "output": str(output),
         "raw_data": args.raw_data,
-        "protocol_frontend": "Protocol-B DCFT acquisition plus local coherent refinement" if args.protocol_b else "Protocol-A coherent pilot estimator",
+        "protocol_frontend": "Protocol-B DCFT acquisition" if args.protocol_b else "Protocol-A coherent pilot estimator",
         "checkpoint_unavailable_architecture_only": checkpoint_unavailable_architecture_only,
         "summary": args.summary,
         "methods": args.methods,

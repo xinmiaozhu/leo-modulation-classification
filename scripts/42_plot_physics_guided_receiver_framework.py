@@ -71,7 +71,7 @@ def main() -> None:
     # Compensation-first deployed path.
     box(ax, (0.25, 5.65), (1.35, 1.05), "Received frame\n$y[n]$\n8192 samples", face="#F3F3F3", weight="bold")
     box(ax, (2.00, 6.35), (1.55, 0.82), "Known comb pilots\nRRC + de-rotation", face="#FFF1D6", edge=orange, size=5.0)
-    box(ax, (3.95, 6.20), (1.65, 1.12), "A: coherent rate\nB: DFRFT/FFT + local\nCFO--rate refinement", face="#FFF1D6", edge=orange, weight="bold", size=4.55)
+    box(ax, (3.95, 6.20), (1.65, 1.12), "A: coherent rate\nB: DCFT acquisition\nCFO--rate estimation", face="#FFF1D6", edge=orange, weight="bold", size=4.55)
     box(ax, (3.95, 4.76), (1.65, 1.00), "Carrier-phase\ncompensation\nA: rate; B: CFO + rate", face="#FFF1D6", edge=orange, weight="bold", size=4.35)
     box(ax, (6.05, 5.10), (1.45, 1.12), "Recovered frame\n$\\widetilde y[n]$\ncarrier residual reduced", face="#E8F2FA", edge=blue, weight="bold", size=4.75)
     arrow(ax, (1.60, 6.18), (2.00, 6.76))

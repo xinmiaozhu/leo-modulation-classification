@@ -102,6 +102,10 @@ def main() -> None:
     if "model" in classification.columns:
         classification = classification[classification["model"] == "iq_evm"].copy()
     classification = classification[classification["gamma_res"] <= 1.2].copy()
+    # Accept either signed scan rows or an already reduced worst-sign envelope.
+    classification = classification.groupby(["snr_db", "gamma_res"], as_index=False).agg(
+        accuracy=("accuracy", "min")
+    )
     operating = pd.read_csv(args.operating_rule)
     operating = operating[np.isclose(operating["delta"], 0.02)].sort_values("snr_db")
 
@@ -222,11 +226,11 @@ def main() -> None:
     )
     ax_closure.plot(
         x, hybrid_p90_ratio, "s-", color="#D55E00",
-        linewidth=1.25, markersize=3.7, label="Hybrid P90", zorder=4,
+        linewidth=1.25, markersize=3.7, label="DCFT P90", zorder=4,
     )
     ax_closure.plot(
         x, hybrid_p95_ratio, "^--", color="#E69F00",
-        linewidth=1.25, markersize=4.1, label="Hybrid P95", zorder=4,
+        linewidth=1.25, markersize=4.1, label="DCFT P95", zorder=4,
     )
 
     ax_closure.set_xlim(-7.7, 5.7)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Audit the promoted Protocol-B hybrid-DFRFT result lineage.
+"""Audit the promoted Protocol-B DCFT acquisition result lineage.
 
 The audit fails closed: a report is written only when every requested
 matched-seed checkpoint and test CSV exists and the Proposed checkpoints point
@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SEEDS = (41, 73, 107, 149, 211)
 METHODS = ("proposed", "mcnet", "starnet")
 EXPECTED_RAW = "data/processed/leo_7mods_joint_practical.h5"
-EXPECTED_IQ = "data/features/hybrid_dfrft/protocol_b_iqcomp.h5"
-EXPECTED_SYMBOL = "data/features/hybrid_dfrft/protocol_b_symbol_exact.h5"
-EXPECTED_PILOT = "data/features/hybrid_dfrft/protocol_b_pilot_hybrid.h5"
+EXPECTED_IQ = "data/features/dcft_acquisition/protocol_b_iqcomp.h5"
+EXPECTED_SYMBOL = "data/features/dcft_acquisition/protocol_b_symbol_exact.h5"
+EXPECTED_PILOT = "data/features/dcft_acquisition/protocol_b_pilot.h5"
 EXPECTED_SPLITS = "data/splits/leo_7mods_joint_practical_splits.npz"
 
 
@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
     parser.add_argument(
         "--output",
-        default="outputs/results/hybrid_dfrft/protocol_b/artifact_audit.json",
+        default="outputs/results/dcft_acquisition/protocol_b/artifact_audit.json",
     )
     parser.add_argument(
         "--require-ablation",
@@ -64,8 +64,8 @@ def main() -> None:
     args = parse_args()
     pilot_path = ROOT / EXPECTED_PILOT
     with h5py.File(pilot_path, "r") as handle:
-        if handle.attrs.get("pilot_estimator_type") != "hybrid_dfrft":
-            raise ValueError("Promoted pilot artifact is not marked as hybrid_dfrft.")
+        if handle.attrs.get("pilot_estimator_type") != "dcft_acquisition":
+            raise ValueError("Promoted pilot artifact is not marked as dcft_acquisition.")
         if normalized(handle.attrs.get("raw_data", "")) != EXPECTED_RAW:
             raise ValueError("Promoted pilot artifact points to the wrong raw data.")
 
@@ -100,9 +100,9 @@ def main() -> None:
     for method in args.methods:
         for seed in args.seeds:
             checkpoint_dir = (
-                ROOT / "outputs/checkpoints/hybrid_dfrft/protocol_b" / method / f"seed_{seed}"
+                ROOT / "outputs/checkpoints/dcft_acquisition/protocol_b" / method / f"seed_{seed}"
             )
-            result_dir = ROOT / "outputs/results/hybrid_dfrft/protocol_b" / method
+            result_dir = ROOT / "outputs/results/dcft_acquisition/protocol_b" / method
             required = [
                 checkpoint_dir / "best.pt",
                 checkpoint_dir / "train_result.json",
@@ -134,14 +134,14 @@ def main() -> None:
 
     ablation_rows: list[dict[str, object]] = []
     if args.require_ablation:
-        ablation_root = ROOT / "outputs/results/hybrid_dfrft/representation_ablation/protocol_b"
+        ablation_root = ROOT / "outputs/results/dcft_acquisition/representation_ablation/protocol_b"
         for method in ("iq_only", "constellation_only"):
             for seed in args.seeds:
                 path = ablation_root / method / f"seed_{seed}_test.csv"
                 summary_path = path.with_suffix(".summary.json")
                 checkpoint_dir = (
                     ROOT
-                    / "outputs/checkpoints/hybrid_dfrft/representation_ablation/protocol_b"
+                    / "outputs/checkpoints/dcft_acquisition/representation_ablation/protocol_b"
                     / method
                     / f"seed_{seed}"
                 )
@@ -190,7 +190,7 @@ def main() -> None:
     payload = {
         "status": "PASS",
         "protocol": "B",
-        "front_end": "hybrid_dfrft",
+        "front_end": "dcft_acquisition",
         "feature_lineage": {
             "pilot_estimates": EXPECTED_PILOT,
             "compensated_iq": EXPECTED_IQ,

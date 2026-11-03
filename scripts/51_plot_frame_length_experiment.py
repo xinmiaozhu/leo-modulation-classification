@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Publish the frame-length table and reference-matched figure after all 60 runs pass validation."""
+"""Publish the reference-matched frame-length figure after all 60 runs pass validation."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

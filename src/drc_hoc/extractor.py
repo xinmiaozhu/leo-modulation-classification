@@ -74,9 +74,6 @@ class DRCHOCConfig:
     evm_max_symbols: int = 512
     evm_symbol_trim: int = 8
     evm_modulations: tuple[str, ...] = ("QPSK", "16QAM", "64QAM", "16APSK", "32APSK")
-    evm_refine_all_candidates: bool = True
-    evm_fine_search_radius_hz_per_s: float = 800.0
-    evm_fine_search_step_hz_per_s: float = 80.0
 
     compensate_fd0: bool = False
     centered_time: bool = False
@@ -146,9 +143,6 @@ class DRCHOCExtractor:
                 evm_max_symbols=cfg.evm_max_symbols,
                 evm_symbol_trim=cfg.evm_symbol_trim,
                 evm_modulations=cfg.evm_modulations,
-                evm_refine_all_candidates=cfg.evm_refine_all_candidates,
-                evm_fine_search_radius_hz_per_s=cfg.evm_fine_search_radius_hz_per_s,
-                evm_fine_search_step_hz_per_s=cfg.evm_fine_search_step_hz_per_s,
             )
         if name == "dechirp_fft":
             mu_grid = np.linspace(cfg.mu_grid_min, cfg.mu_grid_max, cfg.mu_grid_size)

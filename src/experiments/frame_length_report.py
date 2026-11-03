@@ -1,4 +1,4 @@
-"""Validated manuscript artifacts for the four-length Protocol-B campaign."""
+"""Validated figure and Markdown notes for the four-length Protocol-B campaign."""
 from __future__ import annotations
 
 import argparse
@@ -13,13 +13,13 @@ import numpy as np
 import pandas as pd
 
 from src.experiments.frame_length import (ROOT, NAME, LENGTHS, SEEDS, METHODS, SNR, paths,
-    completeness, validate_predictions, estimation_metrics, write_json)
+    completeness, validate_predictions, write_json)
 from src.plotting.common import (IEEE_TRANS_PALETTE, set_ieee_trans_style,
     format_ieee_axis, set_panel_aspect_10_9, boxed_legend)
 
 
 def plot_curves(aggregate, destination, reference=None):
-    """Use the reference's rcParams, canvas, axes, inset and exact export sizes."""
+    """Use reference styling with canvas and exports scaled down by 15% twice."""
     from pypdf import PdfReader
     from PIL import Image
     reference = reference or ROOT / 'outputs/figures/paper/paper_baseline_protocol_a_accuracy_vs_snr.pdf'
@@ -27,8 +27,12 @@ def plot_curves(aggregate, destination, reference=None):
     pdf_size = (float(page.mediabox.width)/72, float(page.mediabox.height)/72)
     with Image.open(reference.with_suffix('.png')) as image:
         png_pixels = image.size
+    scale = 0.85 ** 2
+    pdf_size = tuple(value * scale for value in pdf_size)
+    png_pixels = tuple(round(value * scale) for value in png_pixels)
+    canvas_size = (3.5 * scale, 3.15 * scale)
     set_ieee_trans_style()
-    fig, ax = plt.subplots(figsize=(3.5, 3.15))
+    fig, ax = plt.subplots(figsize=canvas_size)
     inset = ax.inset_axes([0.54, 0.50, 0.44, 0.35])
     for n, color, marker in zip(LENGTHS, ('black','blue','green','red'), ('o','s','^','D')):
         curve = aggregate[(aggregate.n == n) & (aggregate.method == 'proposed')].sort_values('snr_db')
@@ -41,7 +45,7 @@ def plot_curves(aggregate, destination, reference=None):
     ax.set(xlim=(SNR[0]-.5,SNR[-1]+.5),ylim=(0,101.5),xticks=SNR,yticks=np.arange(0,101,20),
            xlabel='SNR (dB)',ylabel='Classification accuracy (%)')
     format_ieee_axis(ax); set_panel_aspect_10_9(ax)
-    inset.set(xlim=(-4,5),ylim=(70,100),xticks=[-4,-1,2,5],yticks=[70,80,90,100])
+    inset.set(xlim=(-4,5),ylim=(80,100),xticks=[-4,-1,2,5],yticks=[80,90,100])
     inset.grid(True,linestyle=':',linewidth=.35,alpha=.5)
     inset.tick_params(direction='out',labelsize=7,length=2,width=.55,pad=1)
     for spine in inset.spines.values(): spine.set_linewidth(.65)
@@ -61,9 +65,9 @@ def plot_curves(aggregate, destination, reference=None):
     assert abs(float(result.mediabox.height)-pdf_size[1]*72)<1e-5
     with Image.open(destination.with_suffix('.png')) as image:
         if image.size!=png_pixels:
-            raise ValueError(f'PNG dimensions differ from reference: {image.size} != {png_pixels}')
+            raise ValueError(f'PNG dimensions differ from scaled target: {image.size} != {png_pixels}')
     return dict(reference=str(reference),pdf_inches=pdf_size,png_pixels=png_pixels,dpi=600,
-        canvas_inches=[3.5,3.15],font_family='Times New Roman',label_font_pt=10,legend_font_pt=8.5,
+        canvas_inches=list(canvas_size),scale=scale,inset_ylim=[80,100],font_family='Times New Roman',label_font_pt=10,legend_font_pt=8.5,
         x_tick_font_pt=8.1,y_tick_font_pt=9,inset_tick_font_pt=7,axes_box_aspect=.9)
 
 
@@ -75,12 +79,9 @@ def publish(name=NAME):
     state=completeness(name)
     if state['complete']!=state['expected']:
         raise ValueError(f"Incomplete campaign: {state['complete']}/{state['expected']}; formal artifacts are withheld.")
-    rows=[]; curves=[]; frozen=[]; estimator=[]
+    rows=[]; curves=[]; frozen=[]
     for n in LENGTHS:
         p=paths(n,name)
-        estimation=estimation_metrics(n,name)
-        timing=json.loads((p['result']/'cpu_receiver_timing.json').read_text())
-        estimator.append(dict(estimation,**timing))
         for method in METHODS:
             for seed in SEEDS:
                 output=p['result']/method/f'seed_{seed}_test.csv'
@@ -112,58 +113,39 @@ def publish(name=NAME):
         seed_count='count',mean_percent='mean',sample_sd_percent='std').reset_index()
     assert (aggregate.seed_count==5).all()
     summary=runs.groupby(['n','method']).accuracy_percent.agg(seed_count='count',mean_percent='mean',sample_sd_percent='std').reset_index()
-    table=pd.DataFrame(estimator)
-    for method in METHODS:
-        selected=summary[summary.method==method].set_index('n')
-        table[method+'_mean_percent']=table.n.map(selected.mean_percent)
-        table[method+'_sd_percent']=table.n.map(selected.sample_sd_percent)
     source=root/'paper'; source.mkdir(parents=True,exist_ok=True)
     runs.to_csv(root/'seed_runs.csv',index=False)
     summary.to_csv(root/'seed_summary.csv',index=False)
     per_snr.to_csv(root/'snr_seed_runs.csv',index=False)
     aggregate.to_csv(root/'snr_summary.csv',index=False)
     pd.DataFrame(frozen).to_csv(root/'frozen_compensation_diagnostics.csv',index=False)
-    table.to_csv(source/'frame_length_table.csv',index=False)
-    # Keep the complete CPU measurements in the source CSV; the paper uses the median.
-    latex=[r'\begin{table*}[t]',r'\centering',
-        r'\caption{Observation-length comparison under Protocol B. Accuracy is the mean $\pm$ sample standard deviation across five matched training seeds. Estimation P95 values use the common test set; E2E time is the batch-one, single-thread CPU median for the complete proposed receiver on validation frames, excluding observation time.}',
-        r'\label{tab:frame_length}',r'\setlength{\tabcolsep}{3.5pt}',r'\begin{tabular}{rrrrccccrrr}',r'\hline',
-        r'$N$ & $T_f$ & $N_p$ & Rate P95 & CFO P95 & $B_\phi$ P95 & I/Q-only & IQFormer & Proposed & E2E \\',
-        r' & (ms) & & (Hz/s) & (Hz) & (rad) & (\%) & (\%) & (\%) & (ms) \\',r'\hline']
-    # Ten displayed columns (three accuracy columns are math expressions).
-    latex[5]=r'\begin{tabular}{rrrrrrcccc}'
-    for r in table.itertuples():
-        acc=lambda m: f'${getattr(r,m+"_mean_percent"):.2f} \\pm {getattr(r,m+"_sd_percent"):.2f}$'
-        latex.append(f'{r.n} & {r.duration_ms:.2f} & {r.pilots} & {r.rate_p95_hz_s:.2f} & {r.cfo_p95_hz:.2f} & {r.b_phi_p95_rad:.3f} & '+
-            ' & '.join(acc(m) for m in ('iq_only','iqformer','proposed'))+f' & {r.e2e_median_ms:.2f} '+r'\\')
-    latex += [r'\hline',r'\end{tabular}',r'\end{table*}']
-    (source/'frame_length_table.tex').write_text('\n'.join(latex)+'\n',encoding='utf-8')
-    figure=source/'frame_length_protocol_b_accuracy_vs_snr.pdf'
+    figure=ROOT/'outputs/figures/paper/frame_length_protocol_b_accuracy_vs_snr.pdf'
     style=plot_curves(aggregate,figure)
     caption=('Protocol-B test accuracy versus SNR for the proposed receiver at four observation lengths. '
              'Each line averages five independently trained, matched-seed models; all lengths share paired source frames. '
              'Sampling rate and pilot fraction are fixed at 200 kHz and 1/16, respectively.')
-    figure_tex='\n'.join([r'\begin{figure}[t]',r'\centering',
-        r'\includegraphics[width=\columnwidth]{frame_length_protocol_b_accuracy_vs_snr.pdf}',
-        '\\caption{'+caption+'}',r'\label{fig:frame_length}',r'\end{figure}'])
-    (source/'frame_length_figure.tex').write_text(figure_tex+'\n',encoding='utf-8')
-    means=table.proposed_mean_percent.to_numpy()
+    proposed=summary[summary.method=='proposed'].set_index('n').loc[list(LENGTHS)]
+    means=proposed.mean_percent.to_numpy()
+    deviations=proposed.sample_sd_percent.to_numpy()
     paragraph=(f'We further evaluate observation lengths N = 2048, 4096, 8192, and 16384 under Protocol B. '
         f'The corresponding frame durations are 10.24, 20.48, 40.96, and 81.92 ms. '
-        f'The proposed receiver achieves mean accuracies of '+', '.join(f'{x:.2f}%' for x in means)+', respectively. '
+        f'The proposed receiver achieves accuracies of '+', '.join(
+            f'{mean:.2f}% +/- {sd:.2f}%' for mean,sd in zip(means,deviations))+
+        ', respectively (mean +/- sample standard deviation across training seeds). '
         'Each length is trained independently with the same number of source frames and five matched seeds. '
         'Longer observations increase both pilot and payload evidence, while quadratic-phase severity grows with the squared duration. '
-        'We therefore report residual phase-error bounds and complete receiver processing time alongside accuracy. '
+        f'Increasing N from 8192 to 16384 improves mean accuracy by {means[3]-means[2]:.2f} percentage points '
+        'while doubling observation duration from 40.96 to 81.92 ms. '
         'Descriptor extraction uses at most 512 available payload symbols, without repeating symbols in shorter frames. '
         'These results characterize the tested duration range and do not establish a universally optimal observation length.')
     (source/'manuscript_addition.md').write_text(paragraph+'\n\nFigure caption: '+caption+'\n',encoding='utf-8')
-    (source/'manuscript_addition.tex').write_text(paragraph.replace('%',r'\%')+'\n',encoding='utf-8')
     write_json(source/'artifact_manifest.json',dict(formal=True,complete_cells=60,seeds=list(SEEDS),
         protocol=cfg,figure_style=style,uncertainty='Sample SD across training seeds, not test-frame SE',
-        timing='Measured complete CPU receiver on validation frames; includes descriptor; excludes disk I/O and observation wait.',
-        artifacts=['frame_length_table.csv','frame_length_table.tex','frame_length_figure.tex',figure.name,
-                   figure.with_suffix('.png').name,'manuscript_addition.md','manuscript_addition.tex']))
-    print(f'Published validated manuscript artifacts: {source}',flush=True)
+        artifact_path_base='repository_root',
+        artifacts=[figure.relative_to(ROOT).as_posix(),
+                   figure.with_suffix('.png').relative_to(ROOT).as_posix(),
+                   (source/'manuscript_addition.md').relative_to(ROOT).as_posix()]))
+    print(f'Published validated figure: {figure}; Markdown notes: {source}',flush=True)
 
 
 def main():

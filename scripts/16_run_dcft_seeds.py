@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Matched-seed paper baselines on final Protocol A/B compensated frames.
 
-Protocol B uses DCFT acquisition plus coherent refinement; hybrid_dfrft is
-only the historical artifact path. IQFormer retains its official STFT branch.
+Protocol B uses DCFT acquisition and versioned acquisition-only artifacts.
+IQFormer retains its official STFT branch. The script filename is historical.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SEEDS = [41, 73, 107, 149, 211]
 DATA = {
     "raw": "data/processed/leo_7mods_joint_practical.h5",
-    "feature": "data/features/hybrid_dfrft/protocol_b_iqcomp.h5",
-    "symbol": "data/features/hybrid_dfrft/protocol_b_symbol_exact.h5",
+    "feature": "data/features/dcft_acquisition/protocol_b_iqcomp.h5",
+    "symbol": "data/features/dcft_acquisition/protocol_b_symbol_exact.h5",
     "splits": "data/splits/leo_7mods_joint_practical_splits.npz",
 }
 METHODS = {
@@ -149,9 +149,9 @@ def validate_test_predictions(path, cfg):
 def run_protocol(args, protocol):
     cfg = protocol_inputs(protocol)
     missing = [path for path in cfg.values() if not (ROOT / path).exists()]
-    if missing:
+    if missing and not args.dry_run:
         raise SystemExit("Missing final protocol inputs: " + str(missing))
-    family = "exact_mixture" if protocol == "A" else "hybrid_dfrft"
+    family = "exact_mixture" if protocol == "A" else "dcft_acquisition"
     checkpoint_root = ROOT / "outputs/checkpoints" / family / f"protocol_{protocol.lower()}"
     result_root = ROOT / "outputs/results" / family / f"protocol_{protocol.lower()}"
     for method in args.methods:
@@ -256,7 +256,7 @@ def run_protocol(args, protocol):
             if not output.with_suffix(".summary.json").exists():
                 continue
             seed = int(output.stem.split("_")[1])
-            rows.append({"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_refined",
+            rows.append({"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_acquisition",
                          "method": method, "seed": seed,
                          "accuracy": accuracy_from_csv(output)})
     # Legacy A baseline results live outside the final-protocol directory.
@@ -299,7 +299,7 @@ def run_protocol(args, protocol):
                     "std_delta_pp": float(delta.std(ddof=1)) if delta.size > 1 else 0.0,
                     "positive_seeds": int(np.count_nonzero(delta > 0.0)),
                 }
-    payload = {"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_refined", "paired": paired}
+    payload = {"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_acquisition", "paired": paired}
     (result_root / "summary.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(aggregate.to_string(index=False))
     print(json.dumps(payload, indent=2))
@@ -346,7 +346,7 @@ def write_campaign_status(args, status, **details):
 
 
 def prediction_path(protocol, method, seed):
-    family = "exact_mixture" if protocol == "A" else "hybrid_dfrft"
+    family = "exact_mixture" if protocol == "A" else "dcft_acquisition"
     result = ROOT / "outputs/results" / family / f"protocol_{protocol.lower()}" / method / f"seed_{seed}_test.csv"
     if not result.exists() and protocol == "A" and method == "starnet":
         result = ROOT / f"outputs/results/starnet_seeds/protocol_a/seed_{seed}_test.csv"
@@ -396,20 +396,25 @@ def five_seed_report(require_complete=True):
     pd.DataFrame(paired).to_csv(output / "paired_gains.csv", index=False)
     # Accuracy comes exclusively from the matched-seed results. Structural costs
     # and hardware timings have a separate provenance; timing is not seed SD.
-    cost_path = ROOT / "outputs/results/baseline_comparison/protocol_a_accuracy_complexity.csv"
+    cost_path = ROOT / "outputs/results/baseline_comparison/protocol_b_accuracy_complexity.csv"
     if cost_path.exists():
         cost = pd.read_csv(cost_path)
+        # This file also stores the previous merged report. Restore the measured
+        # model key and replace old accuracy columns so repeated reports are safe.
+        if "method_implementation" in cost:
+            cost["method"] = cost.pop("method_implementation")
+        cost = cost.drop(columns=["protocol", "count", "mean_percent", "sample_sd_percent"], errors="ignore")
         mapping = dict(C1="cnn2", C2="mcnet", C3="cnn_lstm_dual", C4="satellite_cnn",
                        C5="iqformer", C6="starnet", Proposed="proposed")
         cost["baseline"] = cost.method_id.map(mapping)
         cost = cost.drop(columns=["accuracy", "accuracy_percent"], errors="ignore")
-        cost = cost.merge(summary[summary.protocol == "A"], left_on="baseline", right_on="method",
+        cost = cost.merge(summary[summary.protocol == "B"], left_on="baseline", right_on="method",
                           how="left", validate="one_to_one", suffixes=("_implementation", ""))
         if cost.mean_percent.isna().any():
             raise ValueError("Complexity table contains an unmatched model")
         cost["accuracy_scope"] = "five matched seeds; mean and sample SD"
-        cost["cost_scope"] = "existing Protocol-A seed-41 profiling; E2E is a component-sum estimate"
-        cost.to_csv(output / "protocol_a_accuracy_complexity.csv", index=False)
+        cost["cost_scope"] = "acquisition-only Protocol-B seed-41 profiling; E2E is a component-sum estimate"
+        cost.to_csv(output / "protocol_b_accuracy_complexity.csv", index=False)
         paper_table = cost.rename(columns={"count": "training_seed_count",
                                           "mean_percent": "accuracy_mean_percent",
                                           "sample_sd_percent": "accuracy_sample_sd_percent"})
@@ -430,20 +435,20 @@ def five_seed_report(require_complete=True):
         paper_table = paper_table.reindex(columns=columns)
         paper_table.to_csv(output / "table_iv.csv", index=False)
         (output / "table_iv_metadata.json").write_text(json.dumps(dict(
-            title="Protocol-A five-seed accuracy and computational cost",
+            title="Protocol-B five-seed accuracy and computational cost",
             accuracy_seeds=SEEDS, accuracy_statistic="mean ± sample SD (ddof=1)",
             structure_statistic="Parameters and neural MACs are properties of the fixed architecture and input size.",
-            latency_statistic="Existing single-thread CPU benchmark medians, not training-seed means or SDs.",
+            latency_statistic="New single-thread CPU benchmark medians, not training-seed means or SDs.",
             latency_source=cost_path.relative_to(ROOT).as_posix(),
             latency_limitation="Profiled with seed-41 models in separate sessions; not repeated across the five trained checkpoints.",
             e2e_statistic="Component-sum latency estimate, not a directly timed whole-pipeline execution.",
-            caption="Protocol-A five-seed accuracy and computational cost. Accuracy is mean ± sample standard deviation."
+            caption="Protocol-B five-seed accuracy and computational cost. Accuracy is mean ± sample standard deviation."
         ), indent=2) + "\n", encoding="utf-8")
     labels = dict(cnn2="CNN2", mcnet="MCNet", cnn_lstm_dual="CNN-LSTM", satellite_cnn="IQCNet",
                   iqformer="IQFormer", starnet="STARNet", proposed="Proposed")
     lines = ["# Matched five-seed baseline comparison", "",
              "All accuracies are percentages; SD is the sample standard deviation (ddof=1).",
-             "Protocol B uses DCFT acquisition plus coherent refinement.", "",
+             "Protocol B uses DCFT acquisition.", "",
              "| Method | Protocol A | Protocol B |", "|---|---:|---:|"]
     for method, label in labels.items():
         cells = []
@@ -458,7 +463,7 @@ def five_seed_report(require_complete=True):
 
 def comparison_report():
     frames = []
-    for protocol, family in [("A", "exact_mixture"), ("B", "hybrid_dfrft")]:
+    for protocol, family in [("A", "exact_mixture"), ("B", "dcft_acquisition")]:
         root = ROOT / "outputs/results" / family / f"protocol_{protocol.lower()}"
         path = root / "seed_runs.csv"
         if path.exists():
@@ -475,7 +480,7 @@ def comparison_report():
     summary.to_csv(output / "seed_summary.csv", index=False)
     text = ["# IQFormer comparison", "", "Accuracy is a proportion in seed_runs.csv and seed_summary.csv.",
             "Only count=5 rows are five-seed results. Standard deviations use ddof=1.",
-            "Protocol B: DCFT acquisition plus local coherent refinement.", ""]
+            "Protocol B: DCFT acquisition.", ""]
     (output / "README.md").write_text("\n".join(text), encoding="utf-8")
 
 

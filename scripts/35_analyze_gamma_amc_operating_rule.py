@@ -70,7 +70,7 @@ def main() -> None:
         scan = scan[scan["model"] == "iq_evm"].copy()
     scan = (
         scan.groupby(["snr_db", "gamma_res"], as_index=False)
-        .agg(accuracy=("accuracy", "mean"), count=("count", "sum"))
+        .agg(accuracy=("accuracy", "min"), count=("count", "max"))
         .sort_values(["snr_db", "gamma_res"])
     )
 

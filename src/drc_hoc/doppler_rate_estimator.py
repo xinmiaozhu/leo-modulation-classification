@@ -95,9 +95,6 @@ class PaperStrictDFRFTEstimator:
         evm_max_symbols: int = 512,
         evm_symbol_trim: int = 8,
         evm_modulations: Iterable[str] = ("QPSK", "16QAM", "64QAM", "16APSK", "32APSK"),
-        evm_refine_all_candidates: bool = True,
-        evm_fine_search_radius_hz_per_s: float = 800.0,
-        evm_fine_search_step_hz_per_s: float = 80.0,
     ) -> None:
         self.fs = float(sample_rate_hz)
         self.candidate_orders = tuple(int(k) for k in candidate_orders)
@@ -145,9 +142,6 @@ class PaperStrictDFRFTEstimator:
         self.evm_max_symbols = int(evm_max_symbols)
         self.evm_symbol_trim = int(evm_symbol_trim)
         self.evm_modulations = tuple(str(m).upper() for m in evm_modulations)
-        self.evm_refine_all_candidates = bool(evm_refine_all_candidates)
-        self.evm_fine_search_radius = float(evm_fine_search_radius_hz_per_s)
-        self.evm_fine_search_step = float(evm_fine_search_step_hz_per_s)
         self._evm_rrc_taps = rrc_filter(beta=self.evm_rrc_beta, span=self.evm_rrc_span, sps=max(self.evm_samples_per_symbol, 1))
         self._evm_constellations = tuple((m, get_constellation(m).astype(np.complex128)) for m in self.evm_modulations)
         self._evm_constellation_map = dict(self._evm_constellations)
@@ -429,41 +423,6 @@ class PaperStrictDFRFTEstimator:
                 best_phase = float(phase)
         return best_score, best_modulation, best_timing, best_phase
 
-    def _evm_refine_candidate(
-        self,
-        x: np.ndarray,
-        candidate: dict[str, Any],
-        mu_min: float | None,
-        mu_max: float | None,
-        evm_constellations: tuple[tuple[str, np.ndarray], ...],
-    ) -> dict[str, Any]:
-        radius = max(0.0, self.evm_fine_search_radius)
-        step = max(0.0, self.evm_fine_search_step)
-        if radius <= 0.0 or step <= 0.0:
-            return candidate
-
-        center_mu = float(candidate["mu"])
-        offsets = np.arange(-radius, radius + 0.5 * step, step, dtype=np.float64)
-        best = candidate
-        for offset in offsets:
-            mu = center_mu + float(offset)
-            if mu_min is not None and mu < mu_min:
-                continue
-            if mu_max is not None and mu > mu_max:
-                continue
-            score, modulation, timing, phase = self._evm_score_mu(x, mu, evm_constellations)
-            if score < float(best.get("evm_score", np.inf)):
-                best = {
-                    **candidate,
-                    "mu": float(mu),
-                    "evm_score": float(score),
-                    "evm_best_modulation": modulation,
-                    "evm_best_timing": int(timing),
-                    "evm_best_phase": float(phase),
-                    "evm_fine_used": True,
-                }
-        return best
-
     def _evm_rerank_candidates(
         self,
         x: np.ndarray,
@@ -501,18 +460,13 @@ class PaperStrictDFRFTEstimator:
                 "evm_best_timing": int(timing),
                 "evm_best_phase": float(phase),
                 "evm_rerank_used": True,
-                "evm_fine_used": False,
             }
-            if self.evm_refine_all_candidates:
-                scored_candidate = self._evm_refine_candidate(x, scored_candidate, mu_min, mu_max, evm_constellations)
             scored.append(scored_candidate)
 
         if not scored:
             return None, []
 
         best = min(scored, key=lambda item: item["evm_score"])
-        if not self.evm_refine_all_candidates:
-            best = self._evm_refine_candidate(x, best, mu_min, mu_max, evm_constellations)
         best["evm_rerank_used"] = True
         best["evm_candidate_count"] = int(len(scored))
         return best, scored
@@ -685,7 +639,6 @@ class PaperStrictDFRFTEstimator:
                     "evm_best_timing": int(rerank_best.get("evm_best_timing", -1)),
                     "evm_best_phase": float(rerank_best.get("evm_best_phase", np.nan)),
                     "evm_rerank_used": bool(rerank_best.get("evm_rerank_used", False)),
-                    "evm_fine_used": bool(rerank_best.get("evm_fine_used", False)),
                     "evm_candidate_count": int(rerank_best.get("evm_candidate_count", 0)),
                 }
             )
@@ -794,16 +747,12 @@ class PaperStrictDFRFTEstimator:
                 "evm_modulations": tuple(self.evm_modulations),
                 "evm_allowed_modulations": evm_allowed_modulations,
                 "evm_label_aware_used": bool(evm_modulations is not None),
-                "evm_refine_all_candidates": bool(self.evm_refine_all_candidates),
-                "evm_fine_search_radius_hz_per_s": float(self.evm_fine_search_radius),
-                "evm_fine_search_step_hz_per_s": float(self.evm_fine_search_step),
                 "pre_evm_mu": float(best.get("pre_evm_mu", np.nan)),
                 "selected_evm_score": float(best.get("evm_score", np.nan)),
                 "selected_evm_modulation": str(best.get("evm_best_modulation", "")),
                 "selected_evm_timing": int(best.get("evm_best_timing", -1)),
                 "selected_evm_phase": float(best.get("evm_best_phase", np.nan)),
                 "evm_rerank_used": bool(best.get("evm_rerank_used", False)),
-                "evm_fine_used": bool(best.get("evm_fine_used", False)),
                 "evm_candidate_count": int(best.get("evm_candidate_count", 0)),
                 "hoc_rerank_candidates": [
                     {

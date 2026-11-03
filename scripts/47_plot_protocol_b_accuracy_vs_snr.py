@@ -30,12 +30,12 @@ METHODS = [
     ("satellite_cnn", "C4 IQCNet", "orange", "D"),
     ("iqformer", "C5 IQFormer", "blue", "v"),
     ("starnet", "C6 STARNet", "purple", "X"),
-    ("proposed", "Proposed I/Q-Constellation", "green", "P"),
+    ("proposed", "Proposed", "green", "P"),
 ]
 
 
 def load_runner():
-    spec = importlib.util.spec_from_file_location("baseline_runner", ROOT / "scripts/16_run_hybrid_dfrft_seeds.py")
+    spec = importlib.util.spec_from_file_location("baseline_runner", ROOT / "scripts/16_run_dcft_seeds.py")
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
     runner.ROOT = ROOT
@@ -115,14 +115,11 @@ def plot_five_seed(protocol, output_dir=None):
     fig.tight_layout(pad=0.35)
     for extension in ("pdf", "png"):
         fig.savefig(out / f"{name}.{extension}", dpi=600)
-        # Retain the explicit five-seed alias for existing automation.
-        alias = f"paper_baseline_protocol_{protocol.lower()}_five_seed_accuracy_vs_snr.{extension}"
-        (out / alias).write_bytes((out / f"{name}.{extension}").read_bytes())
     plt.close(fig)
     individual.to_csv(source / f"protocol_{protocol.lower()}_snr_seed_runs.csv", index=False)
     aggregate.to_csv(source / f"protocol_{protocol.lower()}_snr_summary.csv", index=False)
     (source / f"protocol_{protocol.lower()}_figure_manifest.json").write_text(json.dumps(dict(
-        protocol=protocol, front_end="coherent" if protocol == "A" else "dcft_refined",
+        protocol=protocol, front_end="coherent" if protocol == "A" else "dcft_acquisition",
         paper_figure=5 if protocol == "A" else 6,
         figure_pdf=str(out / f"{name}.pdf"),
         seeds=[41, 73, 107, 149, 211], runs=manifest,
@@ -137,7 +134,7 @@ def main() -> None:
     parser.add_argument("--five-seed", action="store_true",
                         help="Accepted for compatibility; formal plots always use all five seeds.")
     parser.add_argument("--output-dir", type=Path, default=None,
-                        help="Optional destination for exported PDF and PNG figures.")
+                        help="Override outputs/figures/paper; existing PDF and PNG figures are replaced.")
     args = parser.parse_args()
     plot_five_seed(args.protocol, output_dir=args.output_dir)
 

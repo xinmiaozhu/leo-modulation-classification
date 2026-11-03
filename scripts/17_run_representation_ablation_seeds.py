@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 """Matched-seed representation and added-HOC ablations for final Protocols A/B.
 
-Protocol B uses DCFT acquisition and local coherent refinement; hybrid_dfrft
-is the historical artifact directory name. Existing final test predictions
+Protocol B uses DCFT acquisition in a separate artifact directory. Existing test predictions
 are reused, and HOC is computed from the exact frozen compensated I/Q.
 """
 from __future__ import annotations
@@ -32,12 +31,12 @@ PROTOCOLS = {
     },
     "B": {
         "train_raw": "data/processed/leo_7mods_joint_practical.h5",
-        "train_feature": "data/features/hybrid_dfrft/protocol_b_iqcomp.h5",
-        "train_symbol": "data/features/hybrid_dfrft/protocol_b_symbol_exact.h5",
+        "train_feature": "data/features/dcft_acquisition/protocol_b_iqcomp.h5",
+        "train_symbol": "data/features/dcft_acquisition/protocol_b_symbol_exact.h5",
         "train_splits": "data/splits/leo_7mods_joint_practical_splits.npz",
         "eval_raw": "data/processed/leo_7mods_joint_practical.h5",
-        "eval_feature": "data/features/hybrid_dfrft/protocol_b_iqcomp.h5",
-        "eval_symbol": "data/features/hybrid_dfrft/protocol_b_symbol_exact.h5",
+        "eval_feature": "data/features/dcft_acquisition/protocol_b_iqcomp.h5",
+        "eval_symbol": "data/features/dcft_acquisition/protocol_b_symbol_exact.h5",
         "eval_splits": "data/splits/leo_7mods_joint_practical_splits.npz",
     },
 }
@@ -82,7 +81,7 @@ def run(command, log_path, dry_run=False):
 
 
 def family(protocol):
-    return "exact_mixture" if protocol == "A" else "hybrid_dfrft"
+    return "exact_mixture" if protocol == "A" else "dcft_acquisition"
 
 
 def result_root(protocol):
@@ -160,7 +159,7 @@ def summarize(protocol, requested_methods, seeds):
                     raise ValueError(f"Missing requested evaluation: {output}")
                 continue
             table = prediction_table(output, cfg)
-            rows.append({"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_coherent",
+            rows.append({"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_acquisition",
                          "method": method, "display": DISPLAY[method], "seed": seed,
                          "accuracy": float((table.label == table.pred).mean()),
                          "eval_csv": str(output.relative_to(ROOT)),
@@ -181,7 +180,7 @@ def summarize(protocol, requested_methods, seeds):
     aggregate = runs.groupby(["method", "display"], sort=False).accuracy.agg(["count", "mean", "std", "min", "max"]).reset_index()
     aggregate.to_csv(root / "seed_summary.csv", index=False)
     pivot = runs.pivot(index="seed", columns="method", values="accuracy")
-    payload = {"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_coherent",
+    payload = {"protocol": protocol, "front_end": "coherent" if protocol == "A" else "dcft_acquisition",
                "seeds": sorted(runs.seed.unique().tolist()), "feature_definition": "full 48-D exact-mixture descriptor; optional 21-D HOC",
                "formal_five_seed_complete": all(set(runs.loc[runs.method == m, "seed"]) == set(SEEDS) for m in DISPLAY)}
     comparisons = [(["iq_only", "constellation_only", "fusion"], "paired_fusion_gain", "fusion_gain_over_stronger_single_pp"),

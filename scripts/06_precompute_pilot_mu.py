@@ -17,8 +17,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from src.drc_hoc.pilot_estimator import PilotMuEstimator, PilotMuEstimatorConfig, PilotMuResult, make_grid
-from src.drc_hoc.hybrid_dfrft_estimator import HybridDFRFTConfig, HybridDFRFTPilotEstimator
+from src.drc_hoc.pilot_estimator import PilotMuEstimator, PilotMuEstimatorConfig, make_grid
+from src.drc_hoc.dcft_estimator import DCFTConfig, DCFTPilotEstimator
 from src.signal.pulse_shape import rrc_filter
 from src.utils.io import save_json
 
@@ -37,8 +37,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--coarse-step", type=float, default=40.0)
     p.add_argument("--fine-radius", type=float, default=120.0)
     p.add_argument("--fine-step", type=float, default=5.0)
-    p.add_argument("--fd0-min", type=float, default=0.0)
-    p.add_argument("--fd0-max", type=float, default=0.0)
+    p.add_argument("--fd0-min", type=float, default=None,
+                   help="CFO lower bound: -550 Hz for DCFT, 0 Hz for coherent_grid by default.")
+    p.add_argument("--fd0-max", type=float, default=None,
+                   help="CFO upper bound: 550 Hz for DCFT, 0 Hz for coherent_grid by default.")
     p.add_argument("--fd0-step", type=float, default=100.0)
     p.add_argument(
         "--fd0-truth-key",
@@ -82,19 +84,23 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--overwrite", action="store_true")
     p.add_argument(
         "--estimator-type",
-        choices=("coherent_grid", "dfrft_only", "hybrid_dfrft"),
-        default="coherent_grid",
-        help="Coherent grid, DFRFT acquisition only, or DFRFT acquisition with coherent local refinement.",
+        choices=("coherent_grid", "dcft_acquisition", "dfrft_only"),
+        default="dcft_acquisition",
+        help="DCFT acquisition (default); dfrft_only is a legacy alias. coherent_grid selects the coherent baseline.",
     )
     p.add_argument("--dfrft-coarse-mu-step", type=float, default=160.0)
     p.add_argument("--dfrft-fft-size", type=int, default=2048)
-    p.add_argument("--dfrft-fine-mu-radius", type=float, default=200.0)
-    p.add_argument("--dfrft-fine-mu-step", type=float, default=5.0)
-    p.add_argument("--dfrft-fine-fd0-radius", type=float, default=30.0)
-    p.add_argument("--dfrft-fine-fd0-step", type=float, default=1.0)
     p.add_argument("--unwrap-centered-cfo", action="store_true",
                    help="Lift comb-pilot FFT frequencies into the bounded frame-start CFO interval (long frames).")
-    return p.parse_args()
+    args = p.parse_args()
+    if args.estimator_type == "dfrft_only":
+        args.estimator_type = "dcft_acquisition"
+    # Preserve Protocol-A coherent defaults; DCFT searches joint CFO and rate.
+    if args.fd0_min is None:
+        args.fd0_min = 0.0 if args.estimator_type == "coherent_grid" else -550.0
+    if args.fd0_max is None:
+        args.fd0_max = 0.0 if args.estimator_type == "coherent_grid" else 550.0
+    return args
 
 
 def copy_meta(raw: h5py.File, out: h5py.File, keys: tuple[str, ...]) -> None:
@@ -116,11 +122,11 @@ def _cuda_coherent_supported(args: argparse.Namespace) -> bool:
     )
 
 
-def _cuda_hybrid_supported(args: argparse.Namespace) -> bool:
+def _cuda_dcft_supported(args: argparse.Namespace) -> bool:
     return bool(
         str(args.device).startswith("cuda")
         and torch.cuda.is_available()
-        and args.estimator_type in {"dfrft_only", "hybrid_dfrft"}
+        and args.estimator_type == "dcft_acquisition"
         and args.pilot_weighting == "coherent"
         and tuple(args.timing_phases) == (0,)
         and int(args.batch_size) > 0
@@ -128,18 +134,17 @@ def _cuda_hybrid_supported(args: argparse.Namespace) -> bool:
 
 
 @torch.inference_mode()
-def _estimate_hybrid_cuda_batch(
+def _estimate_dcft_cuda_batch(
     iq: np.ndarray,
     pilot_indices: np.ndarray,
     pilot_symbols: np.ndarray,
     *,
     config: PilotMuEstimatorConfig,
-    hybrid_config: HybridDFRFTConfig,
+    dcft_config: DCFTConfig,
     device: torch.device,
     rrc_taps: np.ndarray,
-    refine: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """CUDA batch implementation of the frozen pilot DFRFT--coherent hybrid."""
+    """Batched DCFT acquisition without post-acquisition search."""
 
     frame = np.asarray(iq, dtype=np.float32)
     indices = np.asarray(pilot_indices, dtype=np.int64)
@@ -176,7 +181,7 @@ def _estimate_hybrid_cuda_batch(
     pilot_count = int(z.shape[1])
 
     coarse_mu_grid = torch.as_tensor(
-        make_grid(config.mu_min, config.mu_max, hybrid_config.coarse_mu_step_hz_per_s),
+        make_grid(config.mu_min, config.mu_max, dcft_config.coarse_mu_step_hz_per_s),
         dtype=torch.float32,
         device=device,
     )
@@ -184,7 +189,7 @@ def _estimate_hybrid_cuda_batch(
         torch.ones((batch, coarse_mu_grid.numel(), pilot_count), dtype=torch.float32, device=device),
         -np.pi * coarse_mu_grid[None, :, None] * tau[:, None, :].square(),
     )
-    fft_size = max(int(hybrid_config.fft_size), pilot_count)
+    fft_size = max(int(dcft_config.fft_size), pilot_count)
     spectrum = torch.fft.fftshift(
         torch.fft.fft(z[:, None, :] * coarse_phase, n=fft_size, dim=-1),
         dim=-1,
@@ -199,7 +204,7 @@ def _estimate_hybrid_cuda_batch(
         & (frequency[None, None, :] <= torch.maximum(lower, upper)[:, :, None])
     )
     lifted = None
-    if hybrid_config.unwrap_centered_cfo:
+    if dcft_config.unwrap_centered_cfo:
         period = 1.0 / dt
         if float(config.fd0_max_hz - config.fd0_min_hz) >= period:
             raise ValueError("CFO search width must be below the comb-pilot sampling rate.")
@@ -215,65 +220,14 @@ def _estimate_hybrid_cuda_batch(
         centered_cfo = lifted[torch.arange(batch, device=device), coarse_mu_index, frequency_index]
     coarse_fd0 = centered_cfo - coarse_mu * center
 
-    if not refine:
-        return (
-            coarse_mu.cpu().numpy().astype(np.float64),
-            coarse_fd0.cpu().numpy().astype(np.float64),
-            coarse_score.cpu().numpy().astype(np.float64),
-            np.full(batch, np.nan, dtype=np.float64),
-            np.full(batch, pilot_count, dtype=np.int64),
-        )
-
-    mu_step = float(hybrid_config.fine_mu_step_hz_per_s)
-    mu_radius = float(hybrid_config.fine_mu_radius_hz_per_s)
-    mu_offsets = torch.arange(-mu_radius, mu_radius + 0.5 * mu_step, mu_step, device=device)
-    fine_mu = torch.clamp(
-        coarse_mu[:, None] + mu_offsets[None, :],
-        min=float(config.mu_min),
-        max=float(config.mu_max),
-    )
-    fd_step = float(hybrid_config.fine_fd0_step_hz)
-    fd_radius = float(hybrid_config.fine_fd0_radius_hz)
-    fd_offsets = torch.arange(-fd_radius, fd_radius + 0.5 * fd_step, fd_step, device=device)
-    fine_phase = torch.polar(
-        torch.ones((batch, fine_mu.shape[1], pilot_count), dtype=torch.float32, device=device),
-        -np.pi * fine_mu[:, :, None] * t[:, None, :].square(),
-    )
-    best_score = torch.full((batch,), -torch.inf, dtype=torch.float32, device=device)
-    second_score = torch.full_like(best_score, -torch.inf)
-    best_mu = coarse_mu.clone()
-    best_fd0 = coarse_fd0.clone()
-    for offset in fd_offsets:
-        candidate_fd0 = torch.clamp(
-            coarse_fd0 + offset,
-            min=float(config.fd0_min_hz),
-            max=float(config.fd0_max_hz),
-        )
-        linear = torch.polar(
-            torch.ones((batch, pilot_count), dtype=torch.float32, device=device),
-            -2.0 * np.pi * candidate_fd0[:, None] * t,
-        )
-        scores = torch.abs(torch.sum(fine_phase * (z * linear)[:, None, :], dim=-1)).square()
-        scores = scores / float(pilot_count * pilot_count)
-        values, locations = torch.topk(scores, k=min(2, scores.shape[1]), dim=1)
-        local_best = values[:, 0]
-        local_second = values[:, 1] if values.shape[1] > 1 else torch.full_like(local_best, -torch.inf)
-        improved = local_best > best_score
-        second_score = torch.where(
-            improved,
-            torch.maximum(best_score, local_second),
-            torch.maximum(second_score, local_best),
-        )
-        best_score = torch.where(improved, local_best, best_score)
-        selected_mu = torch.gather(fine_mu, 1, locations[:, :1]).squeeze(1)
-        best_mu = torch.where(improved, selected_mu, best_mu)
-        best_fd0 = torch.where(improved, candidate_fd0, best_fd0)
-    margin = (best_score - second_score) / (torch.abs(second_score) + 1e-12)
+    valid_estimate = torch.isfinite(coarse_score) & (pilot_count >= config.min_pilots)
+    coarse_mu = torch.where(valid_estimate, coarse_mu, torch.nan)
+    coarse_fd0 = torch.where(valid_estimate, coarse_fd0, torch.nan)
     return (
-        best_mu.cpu().numpy().astype(np.float64),
-        best_fd0.cpu().numpy().astype(np.float64),
-        best_score.cpu().numpy().astype(np.float64),
-        margin.cpu().numpy().astype(np.float64),
+        coarse_mu.cpu().numpy().astype(np.float64),
+        coarse_fd0.cpu().numpy().astype(np.float64),
+        coarse_score.cpu().numpy().astype(np.float64),
+        np.full(batch, np.nan, dtype=np.float64),
         np.full(batch, pilot_count, dtype=np.int64),
     )
 
@@ -482,18 +436,14 @@ def main() -> None:
             min_pilots=args.min_pilots,
             center_time=args.center_time,
         )
-        hybrid_cfg = HybridDFRFTConfig(
+        dcft_cfg = DCFTConfig(
             coarse_mu_step_hz_per_s=args.dfrft_coarse_mu_step,
             fft_size=args.dfrft_fft_size,
-            fine_mu_radius_hz_per_s=args.dfrft_fine_mu_radius,
-            fine_mu_step_hz_per_s=args.dfrft_fine_mu_step,
-            fine_fd0_radius_hz=args.dfrft_fine_fd0_radius,
-            fine_fd0_step_hz=args.dfrft_fine_fd0_step,
             unwrap_centered_cfo=args.unwrap_centered_cfo,
         )
         estimator = (
-            HybridDFRFTPilotEstimator(cfg, hybrid_cfg)
-            if args.estimator_type in {"dfrft_only", "hybrid_dfrft"}
+            DCFTPilotEstimator(cfg, dcft_cfg)
+            if args.estimator_type == "dcft_acquisition"
             else PilotMuEstimator(cfg)
         )
         n = int(raw["iq"].shape[0])
@@ -545,31 +495,25 @@ def main() -> None:
                 out.create_dataset("fd0_error", shape=(n,), dtype="float32", compression="gzip")
 
             use_cuda_coherent = _cuda_coherent_supported(args)
-            use_cuda_hybrid = _cuda_hybrid_supported(args)
-            use_cuda_batch = use_cuda_coherent or use_cuda_hybrid
+            use_cuda_dcft = _cuda_dcft_supported(args)
+            use_cuda_batch = use_cuda_coherent or use_cuda_dcft
             if use_cuda_batch:
                 device = torch.device(args.device)
                 rrc = rrc_filter(beta=args.rrc_beta, span=args.rrc_span, sps=args.samples_per_symbol)
-                description = (
-                    ("Pilot DFRFT acquisition" if args.estimator_type == "dfrft_only" else
-                     "Pilot DFRFT--coherent hybrid estimation")
-                    if use_cuda_hybrid
-                    else "Pilot-aided coherent mu estimation"
-                )
+                description = "Pilot DCFT acquisition" if use_cuda_dcft else "Pilot coherent estimation"
                 progress = None if args.no_progress else tqdm(total=n, desc=description)
                 for start in range(0, n, int(args.batch_size)):
                     stop = min(start + int(args.batch_size), n)
                     estimate_function = (
-                        _estimate_hybrid_cuda_batch if use_cuda_hybrid else _estimate_coherent_cuda_batch
+                        _estimate_dcft_cuda_batch if use_cuda_dcft else _estimate_coherent_cuda_batch
                     )
                     estimate_kwargs = {
                         "config": cfg,
                         "device": device,
                         "rrc_taps": rrc,
                     }
-                    if use_cuda_hybrid:
-                        estimate_kwargs["hybrid_config"] = hybrid_cfg
-                        estimate_kwargs["refine"] = args.estimator_type == "hybrid_dfrft"
+                    if use_cuda_dcft:
+                        estimate_kwargs["dcft_config"] = dcft_cfg
                     mu_hat, fd0_hat, score, margin, pilot_count = estimate_function(
                         raw["iq"][start:stop],
                         raw["pilot_indices"][start:stop],
@@ -606,20 +550,17 @@ def main() -> None:
                 if not args.no_progress:
                     iterator = tqdm(iterator, desc="Pilot-aided mu estimation")
 
+                cpu_batch = {}
+                cpu_batch_size = max(1, int(args.batch_size))
                 for i in iterator:
-                    result = estimator.estimate(raw["iq"][i], raw["pilot_indices"][i], raw["pilot_symbols"][i])
-                    if args.estimator_type == "hybrid_dfrft":
+                    if i % cpu_batch_size == 0:
+                        cpu_batch = {key: raw[key][i:i + cpu_batch_size]
+                                     for key in ("iq", "pilot_indices", "pilot_symbols")}
+                    offset = i % cpu_batch_size
+                    result = estimator.estimate(*(cpu_batch[key][offset]
+                                                  for key in ("iq", "pilot_indices", "pilot_symbols")))
+                    if args.estimator_type == "dcft_acquisition":
                         result = result.estimate
-                    elif args.estimator_type == "dfrft_only":
-                        result = PilotMuResult(
-                            result.coarse_mu_hz_per_s,
-                            result.coarse_fd0_hz,
-                            result.coarse_score,
-                            result.coarse_margin_rel,
-                            result.estimate.timing,
-                            result.estimate.num_pilots_used,
-                            result.estimate.valid,
-                        )
                     mu_hat = result.mu_hat_hz_per_s
                     out["mu_hat"][i] = mu_hat
                     out["pilot_mu_hat"][i] = mu_hat
@@ -644,8 +585,8 @@ def main() -> None:
 
             out.attrs["pilot_mu_config_json"] = json.dumps(cfg.to_dict())
             out.attrs["pilot_estimator_type"] = args.estimator_type
-            if args.estimator_type in {"dfrft_only", "hybrid_dfrft"}:
-                out.attrs["hybrid_dfrft_config_json"] = json.dumps(hybrid_cfg.to_dict())
+            if args.estimator_type == "dcft_acquisition":
+                out.attrs["dcft_config_json"] = json.dumps(dcft_cfg.to_dict())
             out.attrs["raw_data"] = args.raw_data
 
         summary = {
@@ -654,9 +595,9 @@ def main() -> None:
             "num_samples": n,
             "config": cfg.to_dict(),
             "estimator_type": args.estimator_type,
-            "hybrid_dfrft_config": (
-                hybrid_cfg.to_dict()
-                if args.estimator_type in {"dfrft_only", "hybrid_dfrft"}
+            "dcft_config": (
+                dcft_cfg.to_dict()
+                if args.estimator_type == "dcft_acquisition"
                 else None
             ),
             "fd0_truth_key": args.fd0_truth_key if has_fd0 else None,

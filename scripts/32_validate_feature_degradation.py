@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--final-iq-evm-checkpoint",
-        default="outputs/checkpoints/hybrid_dfrft/protocol_b/proposed/seed_41/best.pt",
+        default="outputs/checkpoints/dcft_acquisition/protocol_b/proposed/seed_41/best.pt",
         help="Deployed compact I/Q--constellation checkpoint used by --classification-only.",
     )
     p.add_argument("--high-snr-min-db", type=float, default=5.0)

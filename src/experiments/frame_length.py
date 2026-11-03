@@ -25,7 +25,7 @@ METHODS = {
     'iq_only': ('drc_dualnet', 'configs/model/dualnet_iq_only.yaml'),
     'iqformer': ('paper_iqformer', 'configs/model/paper_iqformer.yaml'),
 }
-NAME = 'frame_length_protocol_b'
+NAME = 'frame_length_dcft_acquisition'
 
 
 def module(filename):
@@ -58,13 +58,11 @@ def frontend_settings(n):
     # is held constant by scaling rate and CFO steps with T^-2 and T^-1.
     ratio = max(1.0, n / 8192)
     return dict(coarse_mu_step=160 / ratio**2, fft_size=int(2048 * ratio),
-                fine_mu_radius=200 / ratio**2, fine_mu_step=5 / ratio**2,
-                fine_fd0_radius=30.0, fine_fd0_step=1 / ratio,
                 unwrap_centered_cfo=True)
 
 
 def protocol(smoke=False):
-    return dict(version=1, protocol='B', lengths=list(LENGTHS), seeds=list(SEEDS),
+    return dict(version=2, estimator='dcft_acquisition', protocol='B', lengths=list(LENGTHS), seeds=list(SEEDS),
                 methods=list(METHODS), modulations=list(MODULATIONS), snr_db=list(SNR),
                 data_seed=20261022, samples_per_class_snr={'train': 2 if smoke else 200,
                 'val': 1 if smoke else 100, 'test': 1 if smoke else 100},
@@ -231,7 +229,7 @@ def run_step(command, log, marker, status_root, **status):
     if result.returncode:
         # Existing Windows teardown issue: accept only freshly verified completion.
         if (Path(command[1]).name != '12_train_model.py' or (result.returncode & 0xffffffff) != 0xC0000409
-                or not module('16_run_hybrid_dfrft_seeds.py').completed_training_artifacts(command, started)):
+                or not module('16_run_dcft_seeds.py').completed_training_artifacts(command, started)):
             raise RuntimeError(f'Command failed ({result.returncode}); see {log}')
     write_json(marker, dict(command=command, command_hash=identity, elapsed_s=time.time()-started,
         completed_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())))
@@ -241,11 +239,9 @@ def prepare_features(n, name, device):
     p = paths(n, name); setting = frontend_settings(n)
     commands = [
         ('pilot', [sys.executable, 'scripts/06_precompute_pilot_mu.py', '--raw-data', p['raw'], '--output', p['pilot'],
-            '--estimator-type', 'hybrid_dfrft', '--pilot-weighting', 'coherent', '--timing-phases', '0',
+            '--estimator-type', 'dcft_acquisition', '--pilot-weighting', 'coherent', '--timing-phases', '0',
             '--fd0-min', '-550', '--fd0-max', '550', '--fd0-step', '25', '--device', device, '--batch-size', '64',
             '--dfrft-coarse-mu-step', setting['coarse_mu_step'], '--dfrft-fft-size', setting['fft_size'],
-            '--dfrft-fine-mu-radius', setting['fine_mu_radius'], '--dfrft-fine-mu-step', setting['fine_mu_step'],
-            '--dfrft-fine-fd0-radius', setting['fine_fd0_radius'], '--dfrft-fine-fd0-step', setting['fine_fd0_step'],
             '--unwrap-centered-cfo', '--no-progress', '--overwrite']),
         ('iqcomp', [sys.executable, 'scripts/08_precompute_external_mu_hoc.py', '--raw-data', p['raw'],
             '--mu-feature-data', p['pilot'], '--output', p['feature'], '--fd0-key', 'pilot_fd0_hat',
@@ -308,27 +304,11 @@ def validate_predictions(output, p):
     return table
 
 
-def estimation_metrics(n, name):
-    p = paths(n, name)
-    indices = np.sort(np.load(p['splits'])['test'])
-    with h5py.File(p['pilot'], 'r') as f:
-        rate = np.asarray(f['mu_error'][indices], dtype=float)
-        cfo = np.asarray(f['fd0_error'][indices], dtype=float)
-        snr = f['snr_db'][indices]
-    duration = n / 200000
-    bound = 2 * np.pi * np.abs(cfo) * duration + np.pi * np.abs(rate) * duration**2
-    table = pd.DataFrame(dict(index=indices, snr_db=snr, rate_error_hz_s=rate, cfo_error_hz=cfo, b_phi=bound))
-    table.to_csv(p['result'] / 'estimation_test.csv', index=False)
-    return dict(n=n, duration_ms=duration*1000, pilots=n//128,
-        rate_p95_hz_s=float(np.quantile(np.abs(rate), .95)), cfo_p95_hz=float(np.quantile(np.abs(cfo), .95)),
-        b_phi_p95_rad=float(np.quantile(bound, .95)))
-
-
 def diagnostic_and_profile(n, name, device, seeds=SEEDS):
     """Rebuild oracle/no-comp descriptors on test frames; time full CPU receiver on validation."""
     import torch
     from src.datasets.feature_dataset import _preprocess_iq
-    from src.drc_hoc.hybrid_dfrft_estimator import HybridDFRFTConfig, HybridDFRFTPilotEstimator
+    from src.drc_hoc.dcft_estimator import DCFTConfig, DCFTPilotEstimator
     from src.drc_hoc.pilot_estimator import PilotMuEstimatorConfig
     from src.signal.modulation import get_constellation
     from src.signal.pulse_shape import rrc_filter
@@ -379,11 +359,10 @@ def diagnostic_and_profile(n, name, device, seeds=SEEDS):
     if timing_path.exists(): return
     torch.set_num_threads(1)
     setting = frontend_settings(n)
-    estimator = HybridDFRFTPilotEstimator(PilotMuEstimatorConfig(sample_rate_hz=200000, samples_per_symbol=8,
+    estimator = DCFTPilotEstimator(PilotMuEstimatorConfig(sample_rate_hz=200000, samples_per_symbol=8,
         fd0_min_hz=-550, fd0_max_hz=550, pilot_weighting='coherent', phase_only=False, timing_phases=(0,)),
-        HybridDFRFTConfig(coarse_mu_step_hz_per_s=setting['coarse_mu_step'], fft_size=setting['fft_size'],
-        fine_mu_radius_hz_per_s=setting['fine_mu_radius'], fine_mu_step_hz_per_s=setting['fine_mu_step'],
-        fine_fd0_radius_hz=setting['fine_fd0_radius'], fine_fd0_step_hz=setting['fine_fd0_step'], unwrap_centered_cfo=True))
+        DCFTConfig(coarse_mu_step_hz_per_s=setting['coarse_mu_step'], fft_size=setting['fft_size'],
+                   unwrap_centered_cfo=True))
     with h5py.File(p['raw'],'r') as raw:
         val = np.sort(splits['val']); labels=raw['label'][val]; snrs=raw['snr_db'][val]
         selected=[int(val[np.flatnonzero((labels==c)&(snrs==s))[0]]) for c in range(7) for s in SNR]

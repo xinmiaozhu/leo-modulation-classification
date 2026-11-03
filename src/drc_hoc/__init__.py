@@ -38,10 +38,10 @@ from .cumulants import (
 from .reliability_metrics import compute_V_hoc, compute_feature_stability
 from .extractor import DRCHOCConfig, DRCHOCExtractor
 from .pilot_estimator import PilotMuEstimatorConfig, PilotMuEstimator, PilotMuResult
-from .hybrid_dfrft_estimator import (
-    HybridDFRFTConfig,
-    HybridDFRFTPilotEstimator,
-    HybridDFRFTResult,
+from .dcft_estimator import (
+    DCFTConfig,
+    DCFTPilotEstimator,
+    DCFTResult,
 )
 
 __all__ = [
@@ -77,7 +77,7 @@ __all__ = [
     "PilotMuEstimatorConfig",
     "PilotMuEstimator",
     "PilotMuResult",
-    "HybridDFRFTConfig",
-    "HybridDFRFTPilotEstimator",
-    "HybridDFRFTResult",
+    "DCFTConfig",
+    "DCFTPilotEstimator",
+    "DCFTResult",
 ]

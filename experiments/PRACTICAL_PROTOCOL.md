@@ -1,10 +1,8 @@
 # Practical-extension protocol
 
-The current paper includes the joint-impairment protocol below. Its receiver
-uses DCFT-based chirp-focus acquisition with coherent local refinement.
-The `hybrid_dfrft` estimator option and historical script names are retained
-for compatibility; the training and evaluation runner is
-[`scripts/16_run_hybrid_dfrft_seeds.py`](../scripts/16_run_hybrid_dfrft_seeds.py).
+The receiver uses DCFT acquisition without a post-acquisition search. See
+[RUN_DCFT.md](../RUN_DCFT.md) for the manuscript rebuild and artifact locations.
+The training/evaluation runner is `scripts/16_run_dcft_seeds.py`.
 
 ## Joint-impairment split
 
@@ -27,7 +25,7 @@ noise:
   --phase-noise-std-rad 0.0001 --phase-noise-mode random_walk
 ```
 
-Use `scripts/06_precompute_pilot_mu.py --estimator-type hybrid_dfrft` with joint CFO search bounds covering
+Use `scripts/06_precompute_pilot_mu.py --estimator-type dcft_acquisition` with joint CFO search bounds covering
 the generated interval, then rebuild compensated I/Q and all-candidate EVM
 features with scripts 08 and 10. Train on the new train split, select all
 hyperparameters on validation only, and report the untouched test split. A

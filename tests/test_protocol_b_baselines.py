@@ -25,7 +25,7 @@ def load_script(name):
     (0xC0000409, True, True), (0xC0000409, False, False), (1, True, False),
 ])
 def test_training_exit_recovery_requires_known_code_and_verified_outputs(monkeypatch, code, complete, accepted):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     command = ["python", "scripts/12_train_model.py"]
     def fail(*args, **kwargs):
         raise runner.subprocess.CalledProcessError(code, command)
@@ -98,8 +98,8 @@ def test_final_hoc_runner_uses_frozen_inputs_and_checkpoint_config(tmp_path, mon
         assert t[t.index("--feature-data") + 1] == runner.hoc_path(cfg["train_feature"])
         assert e[e.index("--feature-data") + 1] == runner.hoc_path(cfg["eval_feature"])
     if protocol == "B":
-        assert "hybrid_dfrft" in cfg["train_feature"]
-        assert "hybrid_dfrft" in cfg["train_symbol"]
+        assert "dcft_acquisition" in cfg["train_feature"]
+        assert "dcft_acquisition" in cfg["train_symbol"]
     assert not (tmp_path / "outputs").exists()
 
 
@@ -143,7 +143,7 @@ def test_hoc_paired_summary_retains_existing_methods_and_rejects_bad_indices(tmp
 
 
 def test_missing_baselines_use_protocol_b_and_native_preprocessing(tmp_path, monkeypatch):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     for path in runner.DATA.values():
         target = tmp_path / path
@@ -173,11 +173,11 @@ def test_missing_baselines_use_protocol_b_and_native_preprocessing(tmp_path, mon
 
 
 def test_summary_retains_existing_methods_and_repairs_missing_csv(tmp_path, monkeypatch):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "validate_test_predictions", lambda *args: None)
     monkeypatch.setattr(runner, "DATA", {})
-    result = tmp_path / "outputs/results/hybrid_dfrft/protocol_b"
+    result = tmp_path / "outputs/results/dcft_acquisition/protocol_b"
     for method in ("proposed", "cnn2"):
         directory = result / method
         directory.mkdir(parents=True)
@@ -203,7 +203,7 @@ def test_summary_retains_existing_methods_and_repairs_missing_csv(tmp_path, monk
 
 @pytest.mark.parametrize("methods", [["iqformer"], ["cnn2", "cnn_lstm_dual", "satellite_cnn"]])
 def test_iqformer_final_ab_runner_uses_matched_seeds_and_checkpoint_config(monkeypatch, methods):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     calls = []
     monkeypatch.setattr(runner, "run", lambda command, dry_run: calls.append(command))
     monkeypatch.setattr(sys, "argv", ["runner", "--protocols", "A", "B",
@@ -237,7 +237,7 @@ def test_five_seed_curve_uses_sample_sd_and_rejects_missing_or_duplicate_seed():
 
 
 def test_partial_campaign_does_not_publish_final_five_seed_means(tmp_path, monkeypatch):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "protocol_inputs", lambda p: {})
     runner.five_seed_report(require_complete=False)
@@ -249,7 +249,7 @@ def test_partial_campaign_does_not_publish_final_five_seed_means(tmp_path, monke
 
 
 def test_complete_campaign_publishes_percent_accuracy_and_paired_sample_sd(tmp_path, monkeypatch):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     cfg = dict(eval_raw="raw.h5", eval_splits="splits.npz")
     monkeypatch.setattr(runner, "protocol_inputs", lambda p: cfg)
@@ -267,7 +267,7 @@ def test_complete_campaign_publishes_percent_accuracy_and_paired_sample_sd(tmp_p
                                   pred=[0, int(perfect)], correct=[1, int(perfect)])).to_csv(path, index=False)
                 path.with_suffix(".summary.json").write_text(json.dumps(dict(
                     split="test", accuracy=1.0 if perfect else 0.5)))
-    costs = tmp_path / "outputs/results/baseline_comparison/protocol_a_accuracy_complexity.csv"
+    costs = tmp_path / "outputs/results/baseline_comparison/protocol_b_accuracy_complexity.csv"
     costs.parent.mkdir(parents=True)
     pd.DataFrame(dict(method_id=["C1", "C2", "C3", "C4", "C5", "C6", "Proposed"],
                       method=list(range(7)), accuracy=[0.9] * 7, accuracy_percent=[90.] * 7,
@@ -275,6 +275,9 @@ def test_complete_campaign_publishes_percent_accuracy_and_paired_sample_sd(tmp_p
                       network_cpu_median_ms=[2.] * 7, end_to_end_cpu_median_ms=[3.] * 7)).to_csv(costs, index=False)
     runner.five_seed_report()
     output = tmp_path / "outputs/results/baseline_comparison"
+    first_report = (output / "table_iv.csv").read_bytes()
+    runner.five_seed_report()
+    assert (output / "table_iv.csv").read_bytes() == first_report
     summary = pd.read_csv(output / "seed_summary.csv")
     assert len(summary) == 14 and (summary["count"] == 5).all()
     cnn = summary[(summary.protocol == "A") & (summary.method == "cnn2")].iloc[0]
@@ -282,7 +285,7 @@ def test_complete_campaign_publishes_percent_accuracy_and_paired_sample_sd(tmp_p
     assert cnn.sample_sd_percent == pytest.approx(np.sqrt(500))
     gains = pd.read_csv(output / "paired_gains.csv")
     assert (gains.mean_gain_pp == 40).all() and (gains.positive_seeds == 4).all()
-    cost = pd.read_csv(output / "protocol_a_accuracy_complexity.csv")
+    cost = pd.read_csv(output / "protocol_b_accuracy_complexity.csv")
     assert "accuracy_percent" not in cost
     assert (cost.parameter_count == 100).all() and (cost["count"] == 5).all()
     paper = pd.read_csv(output / "table_iv.csv")
@@ -343,12 +346,14 @@ def test_formal_figure_exports_mean_sd_and_publication_names(tmp_path, monkeypat
     out = tmp_path / "outputs/figures/paper"
     assert (out / "paper_baseline_protocol_a_accuracy_vs_snr.pdf").read_bytes().startswith(b"%PDF")
     assert not (out / "paper_baseline_protocol_a_seed41_accuracy_vs_snr.pdf").exists()
+    assert not list(out.glob("*_five_seed_accuracy_vs_snr.*"))
+    assert not (out / "dcft_acquisition").exists()
     summary = pd.read_csv(tmp_path / "outputs/results/baseline_comparison/protocol_a_snr_summary.csv")
     assert (summary.seed_count == 5).all() and (summary.mean_percent == 72).all()
 
 
 def test_iqformer_predictions_reject_duplicate_test_rows(tmp_path, monkeypatch):
-    runner = load_script("16_run_hybrid_dfrft_seeds.py")
+    runner = load_script("16_run_dcft_seeds.py")
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     with h5py.File(tmp_path / "raw.h5", "w") as f:
         f["label"] = [0, 1]

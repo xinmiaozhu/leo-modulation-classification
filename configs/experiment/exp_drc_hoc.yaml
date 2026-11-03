@@ -70,9 +70,6 @@ drc_hoc:
   evm_max_symbols: 512
   evm_symbol_trim: 8
   evm_modulations: ["QPSK", "16QAM", "64QAM", "16APSK", "32APSK"]
-  evm_refine_all_candidates: true
-  evm_fine_search_radius_hz_per_s: 800.0
-  evm_fine_search_step_hz_per_s: 80.0
 
   compensate_fd0: false
   centered_time: false
